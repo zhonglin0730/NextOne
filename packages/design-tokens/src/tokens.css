@@ -1,0 +1,19 @@
+:root {
+  color-scheme: light;
+  --nextone-color-accent: #5b5ce2;
+  --nextone-color-accent-strong: #4546c7;
+  --nextone-color-background: #f7f8fc;
+  --nextone-color-surface: #ffffff;
+  --nextone-color-text: #16181d;
+  --nextone-color-text-muted: #626975;
+  --nextone-color-border: #dfe3eb;
+  --nextone-color-danger: #c43d4b;
+  --nextone-radius-small: 8px;
+  --nextone-radius-medium: 12px;
+  --nextone-radius-large: 18px;
+  --nextone-space-xs: 4px;
+  --nextone-space-sm: 8px;
+  --nextone-space-md: 16px;
+  --nextone-space-lg: 24px;
+  --nextone-space-xl: 32px;
+}
