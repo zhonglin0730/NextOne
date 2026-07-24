@@ -335,6 +335,16 @@ WIP_LIMIT_OVERRIDDEN
 
 ### M1：本地任务内核
 
+实施状态（2026-07-24）：
+
+- 已建立 Task、Area、Project、TaskEvent 和 Outbox 领域/存储模型；
+- 已新增客户端应用层，快速记录和状态转换会在同一事务中写入任务、事件与 Outbox；
+- 已建立 IndexedDB v1 schema，包含 `tasks`、`areas`、`projects`、`taskEvents` 和 `outbox`；
+- 已完成快速记录、收件箱列表、空状态、任务详情抽屉、状态操作和活动记录；
+- 已通过严格类型检查、10 个领域与应用测试、Web 生产构建和 Prettier 检查；
+- 已完成浏览器验收：仅标题创建、刷新恢复、任务详情、状态转换和放弃确认均可用；
+- M1 暂不接服务端同步，Outbox 在 M6 接入 push/pull；当前不需要 Oracle 服务器。
+
 交付：
 
 - Task、Area、Project 的 TypeScript 领域模型；

@@ -1,6 +1,10 @@
 import { supportedLocales, type SupportedLocale } from "@nextone/i18n";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { BrowserRouter, Navigate, NavLink, Route, Routes } from "react-router";
+
+import { CaptureDialog } from "./tasks/CaptureDialog";
+import { InboxPage } from "./tasks/InboxPage";
 
 const navigation = [
   { key: "today", path: "/today" },
@@ -27,6 +31,7 @@ function PlaceholderPage({ pageKey }: { pageKey: NavigationKey }) {
 
 function AppShell() {
   const { i18n, t } = useTranslation();
+  const [captureOpen, setCaptureOpen] = useState(false);
 
   const changeLocale = (locale: SupportedLocale) => {
     void i18n.changeLanguage(locale);
@@ -43,7 +48,7 @@ function AppShell() {
           <span>{t("app.name")}</span>
         </div>
 
-        <nav className="primary-nav" aria-label="Primary">
+        <nav className="primary-nav" aria-label={t("shell.primaryNavigation")}>
           {navigation.map((item) => (
             <NavLink
               className={({ isActive }) => (isActive ? "nav-link nav-link-active" : "nav-link")}
@@ -56,7 +61,7 @@ function AppShell() {
         </nav>
 
         <label className="locale-field">
-          <span>Locale</span>
+          <span>{t("shell.locale")}</span>
           <select
             onChange={(event) => changeLocale(event.target.value as SupportedLocale)}
             value={i18n.resolvedLanguage ?? i18n.language}
@@ -72,7 +77,11 @@ function AppShell() {
 
       <main className="main-content">
         <header className="topbar">
-          <button className="capture-button" type="button">
+          <span className="local-status">
+            <span aria-hidden="true">●</span>
+            {t("shell.offlineReady")}
+          </span>
+          <button className="capture-button" onClick={() => setCaptureOpen(true)} type="button">
             <span aria-hidden="true">＋</span>
             {t("shell.quickCapture")}
           </button>
@@ -80,16 +89,21 @@ function AppShell() {
 
         <Routes>
           <Route element={<Navigate replace to="/today" />} path="/" />
-          {navigation.map((item) => (
-            <Route
-              element={<PlaceholderPage pageKey={item.key} />}
-              key={item.path}
-              path={item.path}
-            />
-          ))}
+          <Route element={<InboxPage onOpenCapture={() => setCaptureOpen(true)} />} path="/inbox" />
+          {navigation
+            .filter((item) => item.key !== "inbox")
+            .map((item) => (
+              <Route
+                element={<PlaceholderPage pageKey={item.key} />}
+                key={item.path}
+                path={item.path}
+              />
+            ))}
           <Route element={<Navigate replace to="/today" />} path="*" />
         </Routes>
       </main>
+
+      <CaptureDialog onClose={() => setCaptureOpen(false)} open={captureOpen} />
     </div>
   );
 }

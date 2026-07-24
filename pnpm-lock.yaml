@@ -29,6 +29,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@nextone/application':
+        specifier: workspace:*
+        version: link:../../packages/application
       '@nextone/design-tokens':
         specifier: workspace:*
         version: link:../../packages/design-tokens
@@ -38,6 +41,9 @@ importers:
       '@nextone/i18n':
         specifier: workspace:*
         version: link:../../packages/i18n
+      '@nextone/storage-contracts':
+        specifier: workspace:*
+        version: link:../../packages/storage-contracts
       i18next:
         specifier: ^25.0.0
         version: 25.10.10(typescript@5.9.3)
@@ -69,6 +75,22 @@ importers:
       vite:
         specifier: ^8.1.0
         version: 8.1.5
+
+  packages/application:
+    dependencies:
+      '@nextone/domain':
+        specifier: workspace:*
+        version: link:../domain
+      '@nextone/storage-contracts':
+        specifier: workspace:*
+        version: link:../storage-contracts
+    devDependencies:
+      typescript:
+        specifier: 'catalog:'
+        version: 5.9.3
+      vitest:
+        specifier: 'catalog:'
+        version: 4.1.10(vite@8.1.5)
 
   packages/contracts:
     devDependencies:

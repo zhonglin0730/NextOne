@@ -4,7 +4,8 @@
 
 NextOne 是一个主动帮助用户做取舍的个人行动系统。
 
-当前仓库处于 V0.1 工程基线阶段。产品和开发文档位于 `docs/`。
+当前仓库已完成 V0.1 M1 本地任务内核：支持快速记录、收件箱、任务详情、
+IndexedDB 本地持久化、任务事件和 Outbox。产品和开发文档位于 `docs/`。
 
 ## 本机要求
 
@@ -40,6 +41,7 @@ pnpm server:run
 
 ## 当前边界
 
-- 当前只初始化 Web、共享 TypeScript 包、Spring Boot 和本地 PostgreSQL；
+- 当前已实现 Web 工程基线与本地任务内核，其他一级页面仍按里程碑逐步开放；
+- M1 数据保存在浏览器 IndexedDB，Outbox 尚未连接服务端同步；
 - Android、自动同步、正式认证和 Oracle 部署将在后续里程碑实现；
 - 不依赖 Supabase、Redis、消息队列或付费 SaaS。
