@@ -8,6 +8,18 @@ spring:
   flyway:
     enabled: true
     locations: classpath:db/migration
+  jackson:
+    default-property-inclusion: non_null
+
+nextone:
+  bootstrap:
+    enabled: ${NEXTONE_BOOTSTRAP_ENABLED:true}
+  single-user:
+    id: ${NEXTONE_USER_ID:local-user}
+    display-name: ${NEXTONE_USER_NAME:NextOne Owner}
+    token: ${NEXTONE_ACCESS_TOKEN:nextone-local-dev-token}
+    locale: ${NEXTONE_USER_LOCALE:zh-CN}
+    time-zone: ${NEXTONE_USER_TIME_ZONE:Asia/Shanghai}
 
 server:
   port: ${NEXTONE_SERVER_PORT:8080}
@@ -22,10 +34,6 @@ management:
     health:
       probes:
         enabled: true
-
-mybatis:
-  configuration:
-    map-underscore-to-camel-case: true
 
 info:
   app:

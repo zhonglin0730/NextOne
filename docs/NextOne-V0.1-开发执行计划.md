@@ -455,6 +455,18 @@ WIP_LIMIT_OVERRIDDEN
 
 ### M5：服务端持久化
 
+实施状态（2026-07-25）：
+
+- 已通过 Flyway V2 建立用户、任务、项目、今日计划、事件、回顾会话和回顾项的 PostgreSQL schema；
+- 已实现封闭单用户 Bearer Token 认证，业务接口中的 `userId` 只从已验证身份获取；
+- 已实现 Task、Project、DailyPlan、Review 和 Event 服务端模块，服务端重新校验任务状态机、DOING 上限、今日焦点上限、项目焦点归属和 revision；
+- 已实现 `/api/v1/auth-context`、`/api/v1/me` 和 `/api/v1/bootstrap`，Bootstrap 只返回当前用户数据；
+- 已提供 `/openapi/nextone-v1.yaml` 契约，并统一使用稳定英文错误码和结构化参数；
+- 已选择 Spring JDBC 作为 M5 数据访问方式，保留明确 SQL 和用户隔离条件，不再引入未使用的 MyBatis；
+- 已通过 3 项服务端单元/上下文测试和 4 项真实 PostgreSQL Testcontainers 集成测试；
+- 已验证空库一次迁移到 V2，以及已有 V1 schema 前向升级到 V2；
+- M5 已在本机 Docker PostgreSQL 验证，不需要 Oracle 服务器；Oracle ARM 部署仍在 M9。
+
 交付：
 
 - PostgreSQL schema 和 Flyway；
@@ -667,11 +679,11 @@ WIP_LIMIT_OVERRIDDEN
 | 阶段 1 附件 | 不包含 |
 | 仓库 | Monorepo |
 | Java 构建 | Maven |
-| 数据访问 | 在 jOOQ、MyBatis、Spring Data 中确认一种 |
+| 数据访问 | Spring JDBC，以显式 SQL 保持规则和用户隔离可审计 |
 | 阶段 1 认证 | 封闭单用户认证，阶段 2 切换标准 OIDC |
 | 阶段 1 同步 | 真实自动同步，但排在本地闭环之后 |
 
-除数据访问方案外，其余推荐值均与当前产品和技术基线一致。
+以上推荐值均已与当前产品和技术基线对齐。
 
 ## 15. 推荐启动顺序
 

@@ -4,9 +4,9 @@
 
 NextOne 是一个主动帮助用户做取舍的个人行动系统。
 
-当前仓库已完成 V0.1 M4 每日收尾和基础回顾：除快速记录、今日计划、执行看板与项目焦点外，
-已支持逐项处理今日未完成事项、选择明天继续或移出今日、回顾决策队列、再看日期和基础行动日志。
-数据保存在 IndexedDB 并同步写入任务事件和 Outbox。产品和开发文档位于 `docs/`。
+当前仓库已完成 V0.1 M5 服务端持久化：Web 端已具备快速记录、今日计划、执行看板、
+项目焦点、每日收尾与基础回顾；服务端已具备 PostgreSQL 持久化、Flyway、封闭单用户认证、
+核心领域 API、Bootstrap、统一错误码和 OpenAPI 契约。产品和开发文档位于 `docs/`。
 
 ## 本机要求
 
@@ -34,15 +34,20 @@ pnpm db:up
 
 启动服务端：
 
-```bash
+```powershell
+$env:NEXTONE_ACCESS_TOKEN="请替换为随机长令牌"
 pnpm server:run
 ```
+
+本地默认令牌仅用于开发：`nextone-local-dev-token`。调用 `/api/v1/**` 时使用
+`Authorization: Bearer <token>`。OpenAPI 文件位于
+`http://127.0.0.1:8080/openapi/nextone-v1.yaml`。
 
 环境变量参考 `deploy/compose/.env.example` 和 `apps/server/src/main/resources/application.yml`。
 
 ## 当前边界
 
 - 当前已实现 Web 工程基线、本地任务内核、今天页、执行看板、项目焦点、每日收尾与基础回顾；
-- M1–M4 数据保存在浏览器 IndexedDB，Outbox 尚未连接服务端同步；
-- Android、自动同步、正式认证和 Oracle 部署将在后续里程碑实现；
+- M5 已实现 PostgreSQL 服务端持久化，但浏览器 IndexedDB 与服务端的 Outbox 同步将在 M6 接通；
+- Android、标准 OIDC 认证和 Oracle 部署将在后续里程碑实现；
 - 不依赖 Supabase、Redis、消息队列或付费 SaaS。

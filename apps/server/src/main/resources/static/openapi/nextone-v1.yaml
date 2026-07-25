@@ -1,0 +1,500 @@
+openapi: 3.1.0
+info:
+  title: NextOne API
+  version: 0.1.0
+  description: Server persistence API for the NextOne V0.1 single-user deployment.
+servers:
+  - url: /
+security:
+  - bearerAuth: []
+paths:
+  /api/v1/auth-context:
+    get:
+      operationId: getAuthContext
+      responses:
+        "200":
+          description: Authenticated single-user context
+  /api/v1/me:
+    get:
+      operationId: getCurrentUser
+      responses:
+        "200":
+          description: Current user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /api/v1/bootstrap:
+    get:
+      operationId: bootstrap
+      responses:
+        "200":
+          description: Current server snapshot for a new client
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /api/v1/tasks:
+    get:
+      operationId: listTasks
+      parameters:
+        - name: includeCanceled
+          in: query
+          schema:
+            type: boolean
+            default: false
+      responses:
+        "200":
+          description: Tasks owned by the current user
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Task"
+    post:
+      operationId: createTask
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTask"
+      responses:
+        "201":
+          description: Created task
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Task"
+        "400":
+          $ref: "#/components/responses/ApiError"
+  /api/v1/tasks/{taskId}:
+    parameters:
+      - $ref: "#/components/parameters/TaskId"
+    get:
+      operationId: getTask
+      responses:
+        "200":
+          description: Task
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Task"
+        "404":
+          $ref: "#/components/responses/ApiError"
+    put:
+      operationId: updateTask
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateTask"
+      responses:
+        "200":
+          description: Updated task
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Task"
+        "409":
+          $ref: "#/components/responses/ApiError"
+  /api/v1/tasks/{taskId}/transition:
+    parameters:
+      - $ref: "#/components/parameters/TaskId"
+    post:
+      operationId: transitionTask
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status:
+                  $ref: "#/components/schemas/TaskStatus"
+                allowWipOverride:
+                  type: boolean
+                  default: false
+      responses:
+        "200":
+          description: Transitioned task
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Task"
+        "409":
+          $ref: "#/components/responses/ApiError"
+  /api/v1/tasks/{taskId}/visibility:
+    parameters:
+      - $ref: "#/components/parameters/TaskId"
+    post:
+      operationId: changeTaskVisibility
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [visibility]
+              properties:
+                visibility:
+                  $ref: "#/components/schemas/TaskVisibility"
+                reviewAt:
+                  type: string
+                  format: date-time
+      responses:
+        "200":
+          description: Updated task
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Task"
+  /api/v1/tasks/{taskId}/review:
+    parameters:
+      - $ref: "#/components/parameters/TaskId"
+    post:
+      operationId: markTaskReviewed
+      responses:
+        "200":
+          description: Reviewed task
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Task"
+  /api/v1/projects:
+    get:
+      operationId: listProjects
+      responses:
+        "200":
+          description: Projects owned by the current user
+    post:
+      operationId: createProject
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+                note:
+                  type: string
+      responses:
+        "201":
+          description: Created project
+  /api/v1/projects/{projectId}:
+    parameters:
+      - name: projectId
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      operationId: getProject
+      responses:
+        "200":
+          description: Project and its tasks
+    put:
+      operationId: updateProject
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, status, revision]
+              properties:
+                name:
+                  type: string
+                note:
+                  type: string
+                status:
+                  type: string
+                  enum: [ACTIVE, ON_HOLD, COMPLETED, CANCELED]
+                revision:
+                  type: integer
+                  format: int64
+                  minimum: 1
+      responses:
+        "200":
+          description: Updated project
+  /api/v1/projects/{projectId}/focus:
+    parameters:
+      - name: projectId
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      operationId: setProjectFocus
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                taskId:
+                  type: string
+                  description: Omit or set to null to clear the project focus.
+      responses:
+        "200":
+          description: Updated project focus
+        "409":
+          $ref: "#/components/responses/ApiError"
+  /api/v1/daily-plans/{date}:
+    parameters:
+      - name: date
+        in: path
+        required: true
+        schema:
+          type: string
+          format: date
+    get:
+      operationId: getDailyPlan
+      responses:
+        "200":
+          description: Daily plan
+  /api/v1/daily-plans/{date}/items:
+    parameters:
+      - name: date
+        in: path
+        required: true
+        schema:
+          type: string
+          format: date
+    post:
+      operationId: addDailyPlanItem
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [taskId, section, timeZone]
+              properties:
+                taskId:
+                  type: string
+                section:
+                  type: string
+                  enum: [FOCUS, LATER]
+                timeZone:
+                  type: string
+                  example: Asia/Shanghai
+      responses:
+        "200":
+          description: Updated daily plan
+        "409":
+          $ref: "#/components/responses/ApiError"
+  /api/v1/daily-plans/{date}/items/{taskId}:
+    parameters:
+      - name: date
+        in: path
+        required: true
+        schema:
+          type: string
+          format: date
+      - $ref: "#/components/parameters/TaskId"
+    delete:
+      operationId: removeDailyPlanItem
+      responses:
+        "200":
+          description: Updated daily plan
+  /api/v1/reviews/queue:
+    get:
+      operationId: getReviewQueue
+      responses:
+        "200":
+          description: Current actionable review queue
+  /api/v1/reviews/sessions:
+    get:
+      operationId: listReviewSessions
+      responses:
+        "200":
+          description: Review sessions
+    post:
+      operationId: startReviewSession
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reviewType]
+              properties:
+                reviewType:
+                  type: string
+                  enum: [DAILY, WEEKLY]
+                periodStart:
+                  type: string
+                  format: date
+                periodEnd:
+                  type: string
+                  format: date
+      responses:
+        "201":
+          description: Started review session
+  /api/v1/reviews/sessions/{sessionId}/complete:
+    parameters:
+      - name: sessionId
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      operationId: completeReviewSession
+      responses:
+        "200":
+          description: Completed review session
+  /api/v1/events:
+    get:
+      operationId: listEvents
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 100
+      responses:
+        "200":
+          description: Recent task events
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+  parameters:
+    TaskId:
+      name: taskId
+      in: path
+      required: true
+      schema:
+        type: string
+  responses:
+    Unauthorized:
+      description: Authentication is required
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    ApiError:
+      description: Stable machine-readable error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+  schemas:
+    User:
+      type: object
+      required: [id, displayName, locale, timeZone]
+      properties:
+        id:
+          type: string
+        displayName:
+          type: string
+        locale:
+          type: string
+        timeZone:
+          type: string
+    TaskStatus:
+      type: string
+      enum: [INBOX, READY, DOING, WAITING, COMPLETED, CANCELED]
+    TaskVisibility:
+      type: string
+      enum: [ACTIVE, SNOOZED, SOMEDAY]
+    Task:
+      type: object
+      required:
+        - id
+        - userId
+        - title
+        - status
+        - visibility
+        - sortKey
+        - createdAt
+        - updatedAt
+        - revision
+      properties:
+        id:
+          type: string
+        userId:
+          type: string
+        projectId:
+          type: string
+        title:
+          type: string
+        note:
+          type: string
+        status:
+          $ref: "#/components/schemas/TaskStatus"
+        visibility:
+          $ref: "#/components/schemas/TaskVisibility"
+        deadlineAt:
+          type: string
+          format: date-time
+        reviewAt:
+          type: string
+          format: date-time
+        reviewedAt:
+          type: string
+          format: date-time
+        sortKey:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        revision:
+          type: integer
+          format: int64
+    CreateTask:
+      type: object
+      required: [title]
+      properties:
+        title:
+          type: string
+        note:
+          type: string
+        projectId:
+          type: string
+        deadlineAt:
+          type: string
+          format: date-time
+        reviewAt:
+          type: string
+          format: date-time
+        estimateMinutes:
+          type: integer
+          minimum: 1
+        energyLevel:
+          type: string
+          enum: [LOW, MEDIUM, HIGH]
+    UpdateTask:
+      allOf:
+        - $ref: "#/components/schemas/CreateTask"
+        - type: object
+          required: [revision]
+          properties:
+            revision:
+              type: integer
+              format: int64
+              minimum: 1
+    Error:
+      type: object
+      required: [code, parameters]
+      properties:
+        code:
+          type: string
+          example: TASK_TRANSITION_INVALID
+        parameters:
+          type: object
+          additionalProperties: true

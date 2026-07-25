@@ -4,13 +4,12 @@
 
 NextOne is a personal action system that proactively helps users make trade-offs.
 
-The repository has completed V0.1 M4, Daily Close and Basic Review. In addition
-to quick capture, daily plans, the execution board, and project focus, it now
-supports processing unfinished daily work one item at a time, explicitly
-continuing tomorrow or removing an item from today, review decision queues,
-review dates, and a basic activity log. Data is stored in IndexedDB while task
-events and Outbox records are written alongside each change. Product and
-development documentation is available in `docs/`.
+The repository has completed V0.1 M5, Server Persistence. The web app provides
+quick capture, daily plans, the execution board, project focus, Daily Close,
+and Basic Review. The server now provides PostgreSQL persistence, Flyway,
+closed single-user authentication, core domain APIs, Bootstrap, stable error
+codes, and an OpenAPI contract. Product and development documentation is
+available in `docs/`.
 
 ## Local Requirements
 
@@ -38,9 +37,14 @@ pnpm db:up
 
 Start the server:
 
-```bash
+```powershell
+$env:NEXTONE_ACCESS_TOKEN="replace-with-a-long-random-token"
 pnpm server:run
 ```
+
+The local default token, `nextone-local-dev-token`, is for development only.
+Requests to `/api/v1/**` must use `Authorization: Bearer <token>`. The OpenAPI
+file is served at `http://127.0.0.1:8080/openapi/nextone-v1.yaml`.
 
 For environment variable examples, see `deploy/compose/.env.example` and
 `apps/server/src/main/resources/application.yml`.
@@ -49,9 +53,9 @@ For environment variable examples, see `deploy/compose/.env.example` and
 
 - The web engineering baseline, local task kernel, Today page, execution board,
   project focus workflow, Daily Close, and Basic Review are implemented.
-- M1–M4 data is stored in browser IndexedDB. The Outbox is not connected to
-  server synchronization yet.
-- Android, automatic synchronization, production authentication, and Oracle
-  deployment are planned for later milestones.
+- M5 adds PostgreSQL server persistence. Connecting browser IndexedDB Outbox
+  records to the server remains part of M6.
+- Android, standard OIDC authentication, and Oracle deployment are planned for
+  later milestones.
 - The system does not depend on Supabase, Redis, message queues, or paid SaaS
   products.

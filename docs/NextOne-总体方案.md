@@ -676,7 +676,7 @@ next-one/
 - Spring Security Resource Server；
 - PostgreSQL；
 - Flyway；
-- MyBatis、jOOQ 或 Spring Data 中择一作为主要数据访问方式；
+- 阶段 1 使用 Spring JDBC 和显式 SQL 作为主要数据访问方式；
 - OpenAPI；
 - Testcontainers；
 - 结构化日志；
@@ -1740,7 +1740,7 @@ Web：
 8. 是否接受阶段 1 不做附件；
 9. Oracle 24GB 实例当前的账户类型、OCPU、磁盘和 Always Free 标记；
 10. 代码仓库是否采用前后端 Monorepo；
-11. Java 数据访问层采用 MyBatis、jOOQ 还是 Spring Data；
+11. Java 数据访问层阶段 1 已确定采用 Spring JDBC；后续只有在查询复杂度显著增长时再评估 jOOQ；
 12. 第一阶段是否直接引入标准 OIDC，还是先使用封闭单用户认证。
 
 ---
