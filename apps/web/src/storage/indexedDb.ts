@@ -197,6 +197,11 @@ class IndexedDbTaskEventRepository implements TaskEventRepository {
     return events.sort((left, right) => right.occurredAt.localeCompare(left.occurredAt));
   }
 
+  async listAll(): Promise<readonly TaskEvent[]> {
+    const events = await requestToPromise(this.store.getAll() as IDBRequest<TaskEvent[]>);
+    return events.sort((left, right) => right.occurredAt.localeCompare(left.occurredAt));
+  }
+
   async append(event: TaskEvent): Promise<void> {
     await requestToPromise(this.store.add(event));
   }

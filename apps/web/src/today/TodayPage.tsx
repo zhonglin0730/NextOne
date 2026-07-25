@@ -156,9 +156,14 @@ export function TodayPage() {
           <h1 id="today-title">{t("today.title")}</h1>
           <p>{t("today.description")}</p>
         </div>
-        <time className="date-pill" dateTime={localDate}>
-          {dateFormatter.format(new Date(`${localDate}T12:00:00`))}
-        </time>
+        <div className="page-header-actions">
+          <time className="date-pill" dateTime={localDate}>
+            {dateFormatter.format(new Date(`${localDate}T12:00:00`))}
+          </time>
+          <Link className="button button-outline" to="/review/daily">
+            {t("dailyClose.open")}
+          </Link>
+        </div>
       </header>
 
       {error.length > 0 ? <p className="page-error">{error}</p> : null}

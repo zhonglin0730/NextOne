@@ -6,6 +6,8 @@ import { BrowserRouter, Navigate, NavLink, Route, Routes } from "react-router";
 import { BoardPage } from "./board/BoardPage";
 import { ProjectDetailPage } from "./projects/ProjectDetailPage";
 import { ProjectsPage } from "./projects/ProjectsPage";
+import { DailyClosePage } from "./review/DailyClosePage";
+import { ReviewCenterPage } from "./review/ReviewCenterPage";
 import { CaptureDialog } from "./tasks/CaptureDialog";
 import { InboxPage } from "./tasks/InboxPage";
 import { TodayPage } from "./today/TodayPage";
@@ -98,8 +100,10 @@ function AppShell() {
           <Route element={<BoardPage />} path="/board" />
           <Route element={<ProjectsPage />} path="/projects" />
           <Route element={<ProjectDetailPage />} path="/projects/:projectId" />
+          <Route element={<ReviewCenterPage />} path="/review" />
+          <Route element={<DailyClosePage />} path="/review/daily" />
           {navigation
-            .filter((item) => !["today", "inbox", "board", "projects"].includes(item.key))
+            .filter((item) => !["today", "inbox", "board", "projects", "review"].includes(item.key))
             .map((item) => (
               <Route
                 element={<PlaceholderPage pageKey={item.key} />}

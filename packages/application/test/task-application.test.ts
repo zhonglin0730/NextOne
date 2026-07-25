@@ -14,7 +14,12 @@ import type {
 } from "@nextone/storage-contracts";
 import { describe, expect, it } from "vitest";
 
-import { ProjectApplicationService, TaskApplicationService, WipLimitExceededError } from "../src";
+import {
+  ProjectApplicationService,
+  ReviewApplicationService,
+  TaskApplicationService,
+  WipLimitExceededError,
+} from "../src";
 
 class MemoryTaskRepository implements TaskRepository {
   constructor(private readonly tasks: Map<string, Task>) {}
@@ -28,6 +33,7 @@ class MemoryTaskRepository implements TaskRepository {
       (task) =>
         (query?.status === undefined || task.status === query.status) &&
         (query?.statuses === undefined || query.statuses.includes(task.status)) &&
+        (query?.projectId === undefined || task.projectId === query.projectId) &&
         (query?.includeCanceled === true || task.status !== "CANCELED"),
     );
   }
@@ -78,6 +84,10 @@ class MemoryEventRepository implements TaskEventRepository {
 
   async listByTaskId(taskId: string): Promise<readonly TaskEvent[]> {
     return this.events.filter((event) => event.taskId === taskId);
+  }
+
+  async listAll(): Promise<readonly TaskEvent[]> {
+    return [...this.events].sort((left, right) => right.occurredAt.localeCompare(left.occurredAt));
   }
 
   async append(event: TaskEvent): Promise<void> {
@@ -169,6 +179,16 @@ function createProjectService(database: LocalDatabase) {
     userId: "local-user",
     generateId: () => `project-id-${++id}`,
     now: () => `2026-07-24T11:${String(minute++).padStart(2, "0")}:00.000Z`,
+  });
+}
+
+function createReviewService(database: LocalDatabase) {
+  let id = 200;
+  return new ReviewApplicationService({
+    database,
+    userId: "local-user",
+    generateId: () => `review-id-${++id}`,
+    now: () => "2026-07-24T12:00:00.000Z",
   });
 }
 
@@ -347,5 +367,85 @@ describe("task application service", () => {
     expect(overview).toHaveLength(1);
     expect(overview[0]?.project.id).toBe(project.id);
     expect(overview[0]?.needsFocusDecision).toBe(true);
+  });
+
+  it("records an explicit review and keeps the task out of the stale queue", async () => {
+    const state = createMemoryDatabase();
+    const tasks = createService(state.database);
+    const review = createReviewService(state.database);
+    const captured = await tasks.capture({ title: "仍然值得做" });
+    await tasks.transition(captured.id, "READY");
+    const current = state.tasks.get(captured.id);
+    expect(current).toBeDefined();
+    state.tasks.set(captured.id, {
+      ...current!,
+      updatedAt: "2026-06-01T00:00:00.000Z",
+    });
+
+    const before = await review.getCenter("2026-07-24T12:00:00.000Z");
+    expect(before.items.map(({ task }) => task.id)).toContain(captured.id);
+
+    const reviewed = await tasks.keepReadyAfterReview(captured.id);
+    const after = await review.getCenter("2026-07-24T12:00:00.000Z");
+
+    expect(reviewed.reviewedAt).toBe("2026-07-24T10:02:00.000Z");
+    expect(after.items.map(({ task }) => task.id)).not.toContain(captured.id);
+    expect(state.events.map((event) => event.type)).toContain("REVIEWED");
+  });
+
+  it("keeps a date-only deadline in the review queue through that local day", async () => {
+    const state = createMemoryDatabase();
+    const tasks = createService(state.database);
+    const review = createReviewService(state.database);
+    const captured = await tasks.capture({
+      title: "今天截止的事项",
+      deadlineAt: "2026-07-24",
+    });
+    await tasks.transition(captured.id, "READY");
+
+    const center = await review.getCenter("2026-07-24T12:00:00.000Z");
+    const item = center.items.find(({ task }) => task.id === captured.id);
+
+    expect(item?.reasons).toContain("DEADLINE_SOON");
+  });
+
+  it("separates unfinished and completed work during daily close", async () => {
+    const state = createMemoryDatabase();
+    const tasks = createService(state.database);
+    const review = createReviewService(state.database);
+    const completedTask = await tasks.capture({ title: "收尾时确认结果" });
+    const waitingTask = await tasks.capture({ title: "等待外部回复" });
+    await tasks.transition(completedTask.id, "READY");
+    await tasks.transition(waitingTask.id, "READY");
+    await tasks.addToToday(completedTask.id, "2026-07-24", "Asia/Shanghai");
+    await tasks.addToToday(waitingTask.id, "2026-07-24", "Asia/Shanghai");
+
+    const before = await review.getDailyClose("2026-07-24");
+    expect(before.unfinished.map(({ task }) => task.id)).toEqual([
+      completedTask.id,
+      waitingTask.id,
+    ]);
+    expect(before.completed).toHaveLength(0);
+
+    await tasks.transition(completedTask.id, "COMPLETED");
+    await tasks.transition(waitingTask.id, "WAITING");
+    const after = await review.getDailyClose("2026-07-24");
+
+    expect(after.unfinished).toHaveLength(0);
+    expect(after.completed.map(({ task }) => task.id)).toEqual([completedTask.id]);
+  });
+
+  it("keeps canceled work queryable in the activity log", async () => {
+    const state = createMemoryDatabase();
+    const tasks = createService(state.database);
+    const review = createReviewService(state.database);
+    const task = await tasks.capture({ title: "主动放弃的事项" });
+    await tasks.transition(task.id, "CANCELED");
+
+    const activity = await review.getActivity();
+
+    expect(activity.some((entry) => entry.type === "CANCELED" && entry.task?.id === task.id)).toBe(
+      true,
+    );
   });
 });

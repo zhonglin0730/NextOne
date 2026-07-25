@@ -94,6 +94,35 @@ export interface ProjectDetail {
   recentActivity: readonly ProjectActivity[];
 }
 
+export type ReviewReason =
+  "STALE" | "WAITING_OVERDUE" | "DEADLINE_SOON" | "REVIEW_DUE" | "LONG_DOING";
+
+export interface ReviewQueueItem {
+  task: Task;
+  reasons: readonly ReviewReason[];
+}
+
+export interface ReviewCenterView {
+  items: readonly ReviewQueueItem[];
+  focuslessProjects: readonly Project[];
+  counts: Readonly<Record<ReviewReason | "FOCUSLESS_PROJECT", number>>;
+}
+
+export interface ActivityLogEntry {
+  id: string;
+  type: TaskEvent["type"] | "FOCUSLESS_PROJECT";
+  occurredAt: string;
+  task?: Task;
+  project?: Project;
+}
+
+export interface DailyCloseView {
+  plan: DailyPlan | undefined;
+  completed: readonly TodayTask[];
+  unfinished: readonly TodayTask[];
+  canceled: readonly TodayTask[];
+}
+
 export class WipLimitExceededError extends Error {
   constructor(
     public readonly limit: number,
@@ -265,9 +294,12 @@ export class TaskApplicationService {
   }
 
   async listBoardTasks(): Promise<readonly Task[]> {
-    return this.dependencies.database.transaction((transaction) =>
-      transaction.tasks.list({ statuses: ["READY", "DOING", "WAITING"] }),
-    );
+    return this.dependencies.database.transaction(async (transaction) => {
+      const tasks = await transaction.tasks.list({
+        statuses: ["READY", "DOING", "WAITING"],
+      });
+      return tasks.filter((task) => task.visibility !== "SNOOZED");
+    });
   }
 
   async findTask(id: string): Promise<Task | undefined> {
@@ -519,6 +551,87 @@ export class TaskApplicationService {
     });
   }
 
+  async keepReadyAfterReview(taskId: string): Promise<Task> {
+    return this.dependencies.database.transaction(async (transaction) => {
+      const current = await transaction.tasks.findById(taskId);
+      if (current === undefined || current.status !== "READY") {
+        throw new Error("Only a ready task can be kept ready");
+      }
+
+      const occurredAt = this.dependencies.now();
+      const task: Task = {
+        ...current,
+        reviewedAt: occurredAt,
+        visibility: "ACTIVE",
+        updatedAt: occurredAt,
+        revision: current.revision + 1,
+      };
+      const event: TaskEvent = {
+        id: this.dependencies.generateId(),
+        userId: task.userId,
+        taskId: task.id,
+        type: "REVIEWED",
+        occurredAt,
+        metadata: {},
+      };
+
+      await persistTaskMutation(
+        transaction,
+        task,
+        [event],
+        occurredAt,
+        this.dependencies.generateId,
+      );
+      return task;
+    });
+  }
+
+  async setReviewDate(taskId: string, reviewAt: string): Promise<Task> {
+    return this.dependencies.database.transaction(async (transaction) => {
+      const current = await transaction.tasks.findById(taskId);
+      if (current === undefined) {
+        throw new Error("Task not found");
+      }
+
+      const occurredAt = this.dependencies.now();
+      const task: Task = {
+        ...current,
+        reviewAt,
+        reviewedAt: occurredAt,
+        visibility: "SNOOZED",
+        updatedAt: occurredAt,
+        revision: current.revision + 1,
+      };
+      const events: TaskEvent[] = [
+        {
+          id: this.dependencies.generateId(),
+          userId: task.userId,
+          taskId: task.id,
+          type: "REVIEW_AT_CHANGED",
+          occurredAt,
+          metadata: { fieldNames: ["reviewAt"] },
+        },
+        {
+          id: this.dependencies.generateId(),
+          userId: task.userId,
+          taskId: task.id,
+          type: "REVIEWED",
+          occurredAt,
+          metadata: {},
+        },
+      ];
+
+      await persistTaskMutation(
+        transaction,
+        task,
+        events,
+        occurredAt,
+        this.dependencies.generateId,
+      );
+      return task;
+    });
+  }
+
   async moveToBoardColumn(
     taskId: string,
     column: BoardColumn,
@@ -699,6 +812,182 @@ export class TaskApplicationService {
         focus: todayTasks.filter(({ item }) => item.section === "FOCUS"),
         later: todayTasks.filter(({ item }) => item.section === "LATER"),
         doing,
+      };
+    });
+  }
+}
+
+function timeValue(value?: string): number | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  const parsed = Date.parse(value);
+  return Number.isNaN(parsed) ? undefined : parsed;
+}
+
+function lastMeaningfulTaskTime(task: Task): number {
+  return Math.max(timeValue(task.updatedAt) ?? 0, timeValue(task.reviewedAt) ?? 0);
+}
+
+export class ReviewApplicationService {
+  constructor(private readonly dependencies: TaskApplicationDependencies) {}
+
+  async getCenter(now: string): Promise<ReviewCenterView> {
+    return this.dependencies.database.transaction(async (transaction) => {
+      const nowValue = timeValue(now) ?? Date.now();
+      const staleCutoff = nowValue - 14 * 86_400_000;
+      const waitingCutoff = nowValue - 7 * 86_400_000;
+      const doingCutoff = nowValue - 7 * 86_400_000;
+      const deadlineCutoff = nowValue + 3 * 86_400_000;
+      const tasks = await transaction.tasks.list();
+      const items: ReviewQueueItem[] = [];
+
+      for (const task of tasks) {
+        const reasons: ReviewReason[] = [];
+        if (
+          task.status === "READY" &&
+          task.visibility === "ACTIVE" &&
+          lastMeaningfulTaskTime(task) <= staleCutoff
+        ) {
+          reasons.push("STALE");
+        }
+        if (
+          task.status === "WAITING" &&
+          (timeValue(task.waitingSince) ?? nowValue) <= waitingCutoff
+        ) {
+          reasons.push("WAITING_OVERDUE");
+        }
+        const deadlineValue = timeValue(task.deadlineAt);
+        const deadlineEnd =
+          deadlineValue === undefined
+            ? undefined
+            : task.deadlineAt?.length === 10
+              ? deadlineValue + 86_400_000 - 1
+              : deadlineValue;
+        if (
+          deadlineValue !== undefined &&
+          deadlineEnd !== undefined &&
+          deadlineEnd >= nowValue &&
+          deadlineValue <= deadlineCutoff
+        ) {
+          reasons.push("DEADLINE_SOON");
+        }
+        if (
+          task.reviewAt !== undefined &&
+          (timeValue(task.reviewAt) ?? Number.POSITIVE_INFINITY) <= nowValue
+        ) {
+          reasons.push("REVIEW_DUE");
+        }
+        if (task.status === "DOING" && lastMeaningfulTaskTime(task) <= doingCutoff) {
+          reasons.push("LONG_DOING");
+        }
+        if (reasons.length > 0) {
+          items.push({ task, reasons });
+        }
+      }
+
+      const projects = await transaction.projects.list({ status: "ACTIVE" });
+      const focuslessProjects: Project[] = [];
+      for (const project of projects) {
+        const focusTask =
+          project.focusTaskId === undefined
+            ? undefined
+            : await transaction.tasks.findById(project.focusTaskId);
+        if (focusTask === undefined || !isOpenTask(focusTask)) {
+          focuslessProjects.push(project);
+        }
+      }
+
+      const counts: Record<ReviewReason | "FOCUSLESS_PROJECT", number> = {
+        STALE: 0,
+        WAITING_OVERDUE: 0,
+        DEADLINE_SOON: 0,
+        REVIEW_DUE: 0,
+        LONG_DOING: 0,
+        FOCUSLESS_PROJECT: focuslessProjects.length,
+      };
+      for (const item of items) {
+        for (const reason of item.reasons) {
+          counts[reason] += 1;
+        }
+      }
+
+      return { items, focuslessProjects, counts };
+    });
+  }
+
+  async getActivity(): Promise<readonly ActivityLogEntry[]> {
+    return this.dependencies.database.transaction(async (transaction) => {
+      const events = await transaction.taskEvents.listAll();
+      const entries: ActivityLogEntry[] = [];
+      const visibleTypes = new Set<TaskEvent["type"]>([
+        "COMPLETED",
+        "CANCELED",
+        "REVIEWED",
+        "PROJECT_FOCUS_SET",
+        "PROJECT_FOCUS_CLEARED",
+      ]);
+
+      for (const event of events) {
+        if (!visibleTypes.has(event.type)) {
+          continue;
+        }
+        const task = await transaction.tasks.findById(event.taskId);
+        if (task !== undefined) {
+          entries.push({
+            id: event.id,
+            type: event.type,
+            occurredAt: event.occurredAt,
+            task,
+          });
+        }
+      }
+
+      const projects = await transaction.projects.list({ status: "ACTIVE" });
+      for (const project of projects) {
+        const focusTask =
+          project.focusTaskId === undefined
+            ? undefined
+            : await transaction.tasks.findById(project.focusTaskId);
+        if (focusTask === undefined || !isOpenTask(focusTask)) {
+          entries.push({
+            id: `focusless-${project.id}`,
+            type: "FOCUSLESS_PROJECT",
+            occurredAt: project.updatedAt,
+            project,
+          });
+        }
+      }
+
+      return entries.sort((left, right) => right.occurredAt.localeCompare(left.occurredAt));
+    });
+  }
+
+  async getDailyClose(localDate: string): Promise<DailyCloseView> {
+    return this.dependencies.database.transaction(async (transaction) => {
+      const plan = await transaction.dailyPlans.findByDate(this.dependencies.userId, localDate);
+      if (plan === undefined) {
+        return { plan: undefined, completed: [], unfinished: [], canceled: [] };
+      }
+
+      const items = await transaction.dailyPlanItems.listByPlanId(plan.id);
+      const all: TodayTask[] = [];
+      for (const item of items) {
+        const task = await transaction.tasks.findById(item.taskId);
+        if (task !== undefined) {
+          all.push({ item, task });
+        }
+      }
+
+      return {
+        plan,
+        completed: all.filter(({ task }) => task.status === "COMPLETED"),
+        unfinished: all.filter(
+          ({ task }) =>
+            task.visibility === "ACTIVE" &&
+            (task.status === "INBOX" || task.status === "READY" || task.status === "DOING"),
+        ),
+        canceled: all.filter(({ task }) => task.status === "CANCELED"),
       };
     });
   }

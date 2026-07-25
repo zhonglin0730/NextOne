@@ -18,6 +18,7 @@ export const taskEventTypes = [
   "PROJECT_CHANGED",
   "PROJECT_FOCUS_SET",
   "PROJECT_FOCUS_CLEARED",
+  "REVIEWED",
 ] as const;
 
 export type TaskEventType = (typeof taskEventTypes)[number];

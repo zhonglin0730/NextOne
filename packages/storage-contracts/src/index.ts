@@ -41,6 +41,7 @@ export interface ProjectRepository {
 
 export interface TaskEventRepository {
   listByTaskId(taskId: string): Promise<readonly TaskEvent[]>;
+  listAll(): Promise<readonly TaskEvent[]>;
   append(event: TaskEvent): Promise<void>;
 }
 
