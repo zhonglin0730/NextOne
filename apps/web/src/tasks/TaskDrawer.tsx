@@ -8,6 +8,7 @@ import {
 import { useEffect, useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 
+import { getLocalDate, getTimeZone } from "../today/date";
 import { notifyTasksChanged, taskApplicationService } from "./taskService";
 
 interface TaskDrawerProps {
@@ -89,6 +90,21 @@ export function TaskDrawer({ task, onClose, onTaskChanged }: TaskDrawerProps) {
     }
   };
 
+  const addToday = async () => {
+    setSubmitting(true);
+    setError("");
+
+    try {
+      await taskApplicationService.addToToday(task.id, getLocalDate(), getTimeZone());
+      notifyTasksChanged();
+      await loadEvents();
+    } catch {
+      setError(t("common.error"));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const availableTransitions = [...allowedTaskTransitions[task.status]];
   const formatter = new Intl.DateTimeFormat(i18n.resolvedLanguage ?? "zh-CN", {
     dateStyle: "medium",
@@ -124,6 +140,14 @@ export function TaskDrawer({ task, onClose, onTaskChanged }: TaskDrawerProps) {
             {t(`status.${task.status}`)}
           </span>
           <div className="status-actions">
+            <button
+              className="button button-outline"
+              disabled={submitting}
+              onClick={() => void addToday()}
+              type="button"
+            >
+              {t("task.addToday")}
+            </button>
             {availableTransitions
               .filter((status) => status !== "CANCELED")
               .map((status) => (

@@ -3,8 +3,10 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { BrowserRouter, Navigate, NavLink, Route, Routes } from "react-router";
 
+import { BoardPage } from "./board/BoardPage";
 import { CaptureDialog } from "./tasks/CaptureDialog";
 import { InboxPage } from "./tasks/InboxPage";
+import { TodayPage } from "./today/TodayPage";
 
 const navigation = [
   { key: "today", path: "/today" },
@@ -90,8 +92,10 @@ function AppShell() {
         <Routes>
           <Route element={<Navigate replace to="/today" />} path="/" />
           <Route element={<InboxPage onOpenCapture={() => setCaptureOpen(true)} />} path="/inbox" />
+          <Route element={<TodayPage />} path="/today" />
+          <Route element={<BoardPage />} path="/board" />
           {navigation
-            .filter((item) => item.key !== "inbox")
+            .filter((item) => !["today", "inbox", "board"].includes(item.key))
             .map((item) => (
               <Route
                 element={<PlaceholderPage pageKey={item.key} />}

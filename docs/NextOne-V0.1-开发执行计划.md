@@ -341,7 +341,7 @@ WIP_LIMIT_OVERRIDDEN
 - 已新增客户端应用层，快速记录和状态转换会在同一事务中写入任务、事件与 Outbox；
 - 已建立 IndexedDB v1 schema，包含 `tasks`、`areas`、`projects`、`taskEvents` 和 `outbox`；
 - 已完成快速记录、收件箱列表、空状态、任务详情抽屉、状态操作和活动记录；
-- 已通过严格类型检查、10 个领域与应用测试、Web 生产构建和 Prettier 检查；
+- 已通过严格类型检查、领域与应用测试、Web 生产构建和 Prettier 检查；
 - 已完成浏览器验收：仅标题创建、刷新恢复、任务详情、状态转换和放弃确认均可用；
 - M1 暂不接服务端同步，Outbox 在 M6 接入 push/pull；当前不需要 Oracle 服务器。
 
@@ -365,6 +365,17 @@ WIP_LIMIT_OVERRIDDEN
 - 非法状态转换被拒绝。
 
 ### M2：今天与执行
+
+实施状态（2026-07-24）：
+
+- 已建立 DailyPlan 和 DailyPlanItem 领域模型、仓储契约与 IndexedDB v2 schema；
+- 已完成今天页，区分今日焦点、正在进行和之后可做，加入今天不会改变任务状态；
+- 已完成 READY、DOING、WAITING 和 SOMEDAY 四列执行看板，拖拽和按钮复用同一应用操作；
+- 已实现 DOING 默认上限 3、超限明确确认、WIP 覆盖事件和 WAITING 释放名额；
+- 已实现立即开始、暂停、等待、完成、加入/移出今天与以后再说；
+- 已通过 14 个领域与应用测试、严格类型检查、生产构建和浏览器交互验收；
+- 已验证 IndexedDB v1 数据无损升级到 v2，今日计划按本地日期隔离，未完成任务不会自动进入次日；
+- M2 仍为纯本地闭环，不需要 Oracle 服务器，也未引入 Supabase 或其他付费依赖。
 
 交付：
 

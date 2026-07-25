@@ -5,6 +5,8 @@ export const taskEventTypes = [
   "CLARIFIED",
   "STATUS_CHANGED",
   "VISIBILITY_CHANGED",
+  "ADDED_TO_DAILY_PLAN",
+  "REMOVED_FROM_DAILY_PLAN",
   "DEADLINE_CHANGED",
   "REVIEW_AT_CHANGED",
   "WAITING_STARTED",
@@ -12,6 +14,7 @@ export const taskEventTypes = [
   "COMPLETED",
   "CANCELED",
   "REOPENED",
+  "WIP_LIMIT_OVERRIDDEN",
 ] as const;
 
 export type TaskEventType = (typeof taskEventTypes)[number];

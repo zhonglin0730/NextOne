@@ -1,6 +1,8 @@
-import type { Task, TaskEvent } from "@nextone/domain";
+import type { DailyPlan, DailyPlanItem, Task, TaskEvent } from "@nextone/domain";
 import type {
   AreaRepository,
+  DailyPlanItemRepository,
+  DailyPlanRepository,
   LocalDatabase,
   OutboxMutation,
   OutboxRepository,
@@ -12,7 +14,7 @@ import type {
 } from "@nextone/storage-contracts";
 import { describe, expect, it } from "vitest";
 
-import { TaskApplicationService } from "../src";
+import { TaskApplicationService, WipLimitExceededError } from "../src";
 
 class MemoryTaskRepository implements TaskRepository {
   constructor(private readonly tasks: Map<string, Task>) {}
@@ -25,12 +27,49 @@ class MemoryTaskRepository implements TaskRepository {
     return [...this.tasks.values()].filter(
       (task) =>
         (query?.status === undefined || task.status === query.status) &&
+        (query?.statuses === undefined || query.statuses.includes(task.status)) &&
         (query?.includeCanceled === true || task.status !== "CANCELED"),
     );
   }
 
   async save(task: Task): Promise<void> {
     this.tasks.set(task.id, task);
+  }
+}
+
+class MemoryDailyPlanRepository implements DailyPlanRepository {
+  constructor(private readonly plans: Map<string, DailyPlan>) {}
+
+  async findByDate(userId: string, localDate: string): Promise<DailyPlan | undefined> {
+    return [...this.plans.values()].find(
+      (plan) => plan.userId === userId && plan.localDate === localDate,
+    );
+  }
+
+  async save(plan: DailyPlan): Promise<void> {
+    this.plans.set(plan.id, plan);
+  }
+}
+
+class MemoryDailyPlanItemRepository implements DailyPlanItemRepository {
+  constructor(private readonly items: Map<string, DailyPlanItem>) {}
+
+  async findByTask(planId: string, taskId: string): Promise<DailyPlanItem | undefined> {
+    return [...this.items.values()].find(
+      (item) => item.planId === planId && item.taskId === taskId,
+    );
+  }
+
+  async listByPlanId(planId: string): Promise<readonly DailyPlanItem[]> {
+    return [...this.items.values()].filter((item) => item.planId === planId);
+  }
+
+  async save(item: DailyPlanItem): Promise<void> {
+    this.items.set(item.id, item);
+  }
+
+  async remove(id: string): Promise<void> {
+    this.items.delete(id);
   }
 }
 
@@ -69,6 +108,8 @@ function createMemoryDatabase() {
   const tasks = new Map<string, Task>();
   const events: TaskEvent[] = [];
   const outbox: OutboxMutation[] = [];
+  const plans = new Map<string, DailyPlan>();
+  const planItems = new Map<string, DailyPlanItem>();
   const unsupportedAreaRepository = {} as AreaRepository;
   const unsupportedProjectRepository = {} as ProjectRepository;
   const transaction: StorageTransaction = {
@@ -76,13 +117,15 @@ function createMemoryDatabase() {
     areas: unsupportedAreaRepository,
     projects: unsupportedProjectRepository,
     taskEvents: new MemoryEventRepository(events),
+    dailyPlans: new MemoryDailyPlanRepository(plans),
+    dailyPlanItems: new MemoryDailyPlanItemRepository(planItems),
     outbox: new MemoryOutboxRepository(outbox),
   };
   const database: LocalDatabase = {
     transaction: async <T>(work: (value: StorageTransaction) => Promise<T>) => work(transaction),
   };
 
-  return { database, tasks, events, outbox };
+  return { database, tasks, events, outbox, plans, planItems };
 }
 
 function createService(database: LocalDatabase) {
@@ -135,5 +178,92 @@ describe("task application service", () => {
       "Task cannot transition from COMPLETED to DOING",
     );
     expect(state.events).toHaveLength(3);
+  });
+
+  it("adds a task to today without changing its execution status", async () => {
+    const state = createMemoryDatabase();
+    const service = createService(state.database);
+    const task = await service.capture({ title: "今天真正要推进的事" });
+    await service.transition(task.id, "READY");
+
+    const item = await service.addToToday(task.id, "2026-07-24", "Asia/Shanghai");
+
+    expect(item.section).toBe("FOCUS");
+    expect(state.tasks.get(task.id)?.status).toBe("READY");
+    expect(state.events.map((event) => event.type)).toContain("ADDED_TO_DAILY_PLAN");
+  });
+
+  it("rejects a fourth doing task until the user explicitly overrides the limit", async () => {
+    const state = createMemoryDatabase();
+    const service = createService(state.database);
+    const tasks: Task[] = [];
+
+    for (let index = 0; index < 4; index += 1) {
+      const task = await service.capture({ title: `任务 ${index + 1}` });
+      tasks.push(await service.transition(task.id, "READY"));
+    }
+
+    for (const task of tasks.slice(0, 3)) {
+      await service.transition(task.id, "DOING");
+    }
+
+    const fourthTask = tasks[3];
+    expect(fourthTask).toBeDefined();
+    await expect(service.transition(fourthTask!.id, "DOING")).rejects.toBeInstanceOf(
+      WipLimitExceededError,
+    );
+
+    await service.transition(fourthTask!.id, "DOING", { allowWipOverride: true });
+    expect(state.events.map((event) => event.type)).toContain("WIP_LIMIT_OVERRIDDEN");
+  });
+
+  it("allows another task to start after a doing task moves to waiting", async () => {
+    const state = createMemoryDatabase();
+    const service = createService(state.database);
+    const tasks: Task[] = [];
+
+    for (let index = 0; index < 4; index += 1) {
+      const task = await service.capture({ title: `任务 ${index + 1}` });
+      tasks.push(await service.transition(task.id, "READY"));
+    }
+
+    for (const task of tasks.slice(0, 3)) {
+      await service.transition(task.id, "DOING");
+    }
+
+    await service.transition(tasks[0]!.id, "WAITING");
+    const started = await service.transition(tasks[3]!.id, "DOING");
+
+    expect(started.status).toBe("DOING");
+  });
+
+  it("uses one board operation to move tasks into and out of someday", async () => {
+    const state = createMemoryDatabase();
+    const service = createService(state.database);
+    const captured = await service.capture({ title: "暂时不推进" });
+    const ready = await service.transition(captured.id, "READY");
+    await service.transition(ready.id, "DOING");
+
+    const someday = await service.moveToBoardColumn(ready.id, "SOMEDAY");
+
+    expect(someday.status).toBe("READY");
+    expect(someday.visibility).toBe("SOMEDAY");
+
+    const restored = await service.moveToBoardColumn(ready.id, "WAITING");
+
+    expect(restored.status).toBe("WAITING");
+    expect(restored.visibility).toBe("ACTIVE");
+  });
+
+  it("does not carry unfinished tasks into another date automatically", async () => {
+    const state = createMemoryDatabase();
+    const service = createService(state.database);
+    const task = await service.capture({ title: "只属于今天" });
+    await service.addToToday(task.id, "2026-07-24", "Asia/Shanghai");
+
+    const tomorrow = await service.getToday("2026-07-25");
+
+    expect(tomorrow.focus).toHaveLength(0);
+    expect(tomorrow.later).toHaveLength(0);
   });
 });

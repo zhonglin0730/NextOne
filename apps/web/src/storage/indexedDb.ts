@@ -1,6 +1,8 @@
-import type { Area, Project, Task, TaskEvent } from "@nextone/domain";
+import type { Area, DailyPlan, DailyPlanItem, Project, Task, TaskEvent } from "@nextone/domain";
 import type {
   AreaRepository,
+  DailyPlanItemRepository,
+  DailyPlanRepository,
   LocalDatabase,
   OutboxMutation,
   OutboxRepository,
@@ -13,13 +15,15 @@ import type {
 } from "@nextone/storage-contracts";
 
 const databaseName = "nextone";
-const databaseVersion = 1;
+const databaseVersion = 2;
 
 const stores = {
   tasks: "tasks",
   areas: "areas",
   projects: "projects",
   taskEvents: "taskEvents",
+  dailyPlans: "dailyPlans",
+  dailyPlanItems: "dailyPlanItems",
   outbox: "outbox",
 } as const;
 
@@ -74,6 +78,17 @@ function createSchema(database: IDBDatabase): void {
     eventStore.createIndex("occurredAt", "occurredAt", { unique: false });
   }
 
+  if (!database.objectStoreNames.contains(stores.dailyPlans)) {
+    const planStore = database.createObjectStore(stores.dailyPlans, { keyPath: "id" });
+    planStore.createIndex("userDate", ["userId", "localDate"], { unique: true });
+  }
+
+  if (!database.objectStoreNames.contains(stores.dailyPlanItems)) {
+    const planItemStore = database.createObjectStore(stores.dailyPlanItems, { keyPath: "id" });
+    planItemStore.createIndex("planId", "planId", { unique: false });
+    planItemStore.createIndex("planTask", ["planId", "taskId"], { unique: true });
+  }
+
   if (!database.objectStoreNames.contains(stores.outbox)) {
     const outboxStore = database.createObjectStore(stores.outbox, { keyPath: "id" });
     outboxStore.createIndex("createdAt", "createdAt", { unique: false });
@@ -119,6 +134,7 @@ class IndexedDbTaskRepository implements TaskRepository {
       .filter(
         (task) =>
           (query?.status === undefined || task.status === query.status) &&
+          (query?.statuses === undefined || query.statuses.includes(task.status)) &&
           (query?.projectId === undefined || task.projectId === query.projectId) &&
           (query?.includeCanceled === true || task.status !== "CANCELED"),
       )
@@ -186,6 +202,45 @@ class IndexedDbTaskEventRepository implements TaskEventRepository {
   }
 }
 
+class IndexedDbDailyPlanRepository implements DailyPlanRepository {
+  constructor(private readonly store: IDBObjectStore) {}
+
+  async findByDate(userId: string, localDate: string): Promise<DailyPlan | undefined> {
+    return requestToPromise(
+      this.store.index("userDate").get([userId, localDate]) as IDBRequest<DailyPlan | undefined>,
+    );
+  }
+
+  async save(plan: DailyPlan): Promise<void> {
+    await requestToPromise(this.store.put(plan));
+  }
+}
+
+class IndexedDbDailyPlanItemRepository implements DailyPlanItemRepository {
+  constructor(private readonly store: IDBObjectStore) {}
+
+  async findByTask(planId: string, taskId: string): Promise<DailyPlanItem | undefined> {
+    return requestToPromise(
+      this.store.index("planTask").get([planId, taskId]) as IDBRequest<DailyPlanItem | undefined>,
+    );
+  }
+
+  async listByPlanId(planId: string): Promise<readonly DailyPlanItem[]> {
+    const items = await requestToPromise(
+      this.store.index("planId").getAll(planId) as IDBRequest<DailyPlanItem[]>,
+    );
+    return items.sort((left, right) => left.sortKey.localeCompare(right.sortKey));
+  }
+
+  async save(item: DailyPlanItem): Promise<void> {
+    await requestToPromise(this.store.put(item));
+  }
+
+  async remove(id: string): Promise<void> {
+    await requestToPromise(this.store.delete(id));
+  }
+}
+
 class IndexedDbOutboxRepository implements OutboxRepository {
   constructor(private readonly store: IDBObjectStore) {}
 
@@ -221,6 +276,12 @@ export class IndexedDbLocalDatabase implements LocalDatabase {
       projects: new IndexedDbProjectRepository(indexedDbTransaction.objectStore(stores.projects)),
       taskEvents: new IndexedDbTaskEventRepository(
         indexedDbTransaction.objectStore(stores.taskEvents),
+      ),
+      dailyPlans: new IndexedDbDailyPlanRepository(
+        indexedDbTransaction.objectStore(stores.dailyPlans),
+      ),
+      dailyPlanItems: new IndexedDbDailyPlanItemRepository(
+        indexedDbTransaction.objectStore(stores.dailyPlanItems),
       ),
       outbox: new IndexedDbOutboxRepository(indexedDbTransaction.objectStore(stores.outbox)),
     };

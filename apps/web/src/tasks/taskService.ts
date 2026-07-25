@@ -9,6 +9,7 @@ export const taskApplicationService = new TaskApplicationService({
   userId: "local-user",
   generateId: () => crypto.randomUUID(),
   now: () => new Date().toISOString(),
+  wipLimit: 3,
 });
 
 export function notifyTasksChanged(): void {
