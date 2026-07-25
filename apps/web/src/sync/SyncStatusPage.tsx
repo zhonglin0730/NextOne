@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { nextOneDatabase } from "../storage/indexedDb";
+import { SettingsNav } from "../settings/SettingsNav";
 import {
   getSyncConfiguration,
   getSyncSummary,
@@ -77,6 +78,7 @@ export function SyncStatusPage() {
           {t("sync.syncNow")}
         </button>
       </header>
+      <SettingsNav />
 
       <div className="sync-summary-grid">
         <article className="panel sync-summary-card">
@@ -105,7 +107,11 @@ export function SyncStatusPage() {
       {details?.state.lastError && (
         <div className="sync-error" role="alert">
           <strong>{t("sync.lastError")}</strong>
-          <span>{details.state.lastError}</span>
+          <span>
+            {t(`sync.errorCode.${details.state.lastError}`, {
+              defaultValue: details.state.lastError,
+            })}
+          </span>
           {details.state.nextRetryAt && (
             <small>
               {t("sync.nextRetry", {
@@ -158,9 +164,13 @@ export function SyncStatusPage() {
               <article key={conflict.id}>
                 <div>
                   <strong>
-                    {conflict.entityType} · {conflict.entityId}
+                    {t(`sync.entity.${conflict.entityType}`)} · {conflict.entityId}
                   </strong>
-                  <span>{conflict.code}</span>
+                  <span>
+                    {t(`sync.errorCode.${conflict.code}`, {
+                      defaultValue: conflict.code,
+                    })}
+                  </span>
                   <small>{new Date(conflict.createdAt).toLocaleString()}</small>
                 </div>
                 <div className="sync-conflict-actions">

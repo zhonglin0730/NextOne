@@ -4,11 +4,12 @@
 
 NextOne is a personal action system that proactively helps users make trade-offs.
 
-The repository has completed V0.1 M6, Sync. The web app provides
-quick capture, daily plans, the execution board, project focus, Daily Close,
-and Basic Review. Its IndexedDB Outbox is connected to Spring Boot/PostgreSQL
-with idempotent push, incremental pull, offline retry, and explicit conflict
-resolution. Product and development documentation is available in `docs/`.
+The repository has completed V0.1 M7, Settings, Data Safety, and
+Internationalization. In addition to the complete action and offline-sync
+workflow, the web app now provides locale and action-rule preferences, JSON
+import/export with preview, automatic restore points, local-copy cleanup, and
+a protected account-deletion request API. Product and development
+documentation is available in `docs/`.
 
 ## Local Requirements
 
@@ -54,6 +55,10 @@ For environment variable examples, see `deploy/compose/.env.example` and
   project focus workflow, Daily Close, and Basic Review are implemented.
 - M6 connects browser IndexedDB Outbox records to the server and adds sync
   status and conflict resolution at `/settings/sync`.
+- M7 adds `/settings/general` and `/settings/data`. Import replacement creates
+  a local restore point first.
+- Clearing a local copy never deletes cloud data, and the browser cannot
+  directly execute final account deletion.
 - Android, standard OIDC authentication, and Oracle deployment are planned for
   later milestones.
 - The system does not depend on Supabase, Redis, message queues, or paid SaaS

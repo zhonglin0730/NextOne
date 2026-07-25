@@ -115,6 +115,59 @@ export interface SyncConflictRepository {
   save(conflict: SyncConflict): Promise<void>;
 }
 
+export interface UserPreferences {
+  id: "default";
+  locale: "zh-CN" | "en-XA";
+  timeZone: string;
+  dateFormat: "LOCALE" | "ISO";
+  weekStartsOn: "MONDAY" | "SUNDAY";
+  timeFormat: "12H" | "24H";
+  theme: "SYSTEM" | "LIGHT" | "DARK";
+  focusLimit: number;
+  wipLimit: number;
+  staleDays: number;
+  waitingDays: number;
+  defaultSort: "MANUAL" | "CREATED_AT" | "DEADLINE";
+  updatedAt: string;
+}
+
+export interface UserPreferencesRepository {
+  get(): Promise<UserPreferences | undefined>;
+  save(preferences: UserPreferences): Promise<void>;
+}
+
+export interface LocalDataSnapshot {
+  schemaVersion: 1;
+  exportedAt: string;
+  tasks: readonly Task[];
+  areas: readonly Area[];
+  projects: readonly Project[];
+  taskEvents: readonly TaskEvent[];
+  dailyPlans: readonly DailyPlan[];
+  dailyPlanItems: readonly DailyPlanItem[];
+  preferences?: UserPreferences;
+}
+
+export interface RestorePoint {
+  id: string;
+  reason: "BEFORE_IMPORT" | "MANUAL";
+  createdAt: string;
+  snapshot: LocalDataSnapshot;
+}
+
+export interface RestorePointRepository {
+  list(): Promise<readonly RestorePoint[]>;
+  findById(id: string): Promise<RestorePoint | undefined>;
+  save(restorePoint: RestorePoint): Promise<void>;
+  remove(id: string): Promise<void>;
+}
+
+export interface DataManagementRepository {
+  exportSnapshot(exportedAt: string): Promise<LocalDataSnapshot>;
+  replaceWithSnapshot(snapshot: LocalDataSnapshot, occurredAt: string): Promise<void>;
+  clearLocalCopy(): Promise<void>;
+}
+
 export interface StorageTransaction {
   tasks: TaskRepository;
   areas: AreaRepository;
@@ -125,6 +178,9 @@ export interface StorageTransaction {
   outbox: OutboxRepository;
   syncState: SyncStateRepository;
   syncConflicts: SyncConflictRepository;
+  preferences: UserPreferencesRepository;
+  restorePoints: RestorePointRepository;
+  dataManagement: DataManagementRepository;
 }
 
 export interface LocalDatabase {

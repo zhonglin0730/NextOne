@@ -65,9 +65,9 @@ class NextOnePostgresIntegrationTest {
         Integer migrationCount = jdbcTemplate.queryForObject("""
                 SELECT count(*)
                 FROM flyway_schema_history
-                WHERE success = true AND version IN ('1', '2', '3')
+                WHERE success = true AND version IN ('1', '2', '3', '4')
                 """, Integer.class);
-        assertThat(migrationCount).isEqualTo(3);
+        assertThat(migrationCount).isEqualTo(4);
 
         HttpResponse<String> response = send("GET", "/api/v1/me", null, null);
         assertThat(response.statusCode()).isEqualTo(401);
@@ -124,6 +124,13 @@ class NextOnePostgresIntegrationTest {
                 WHERE table_schema = 'existing_v1' AND table_name = 'sync_mutation'
                 """, Integer.class);
         assertThat(syncTableAfterUpgrade).isEqualTo(1);
+        Integer deletionRequestTableAfterUpgrade = jdbcTemplate.queryForObject("""
+                SELECT count(*)
+                FROM information_schema.tables
+                WHERE table_schema = 'existing_v1'
+                  AND table_name = 'account_deletion_request'
+                """, Integer.class);
+        assertThat(deletionRequestTableAfterUpgrade).isEqualTo(1);
     }
 
     @Test
@@ -355,6 +362,47 @@ class NextOnePostgresIntegrationTest {
         JsonNode pullBody = jsonMapper.readTree(pulled.body());
         assertThat(pullBody.get("nextCursor").asLong()).isPositive();
         assertThat(pullBody.get("changes").toString()).contains(taskId);
+    }
+
+    @Test
+    @Order(6)
+    void createsAProtectedDeletionRequestWithoutDeletingAccountData() throws Exception {
+        HttpResponse<String> first = send(
+                "POST",
+                "/api/v1/account/deletion-requests",
+                null,
+                "test-access-token"
+        );
+        assertThat(first.statusCode()).isEqualTo(200);
+        JsonNode firstBody = jsonMapper.readTree(first.body());
+        assertThat(firstBody.get("status").asString())
+                .isEqualTo("AWAITING_FINAL_CONFIRMATION");
+        assertThat(firstBody.get("backupConfirmationRequired").asBoolean()).isTrue();
+        assertThat(firstBody.get("finalDeletionAvailable").asBoolean()).isFalse();
+
+        HttpResponse<String> second = send(
+                "POST",
+                "/api/v1/account/deletion-requests",
+                null,
+                "test-access-token"
+        );
+        assertThat(second.statusCode()).isEqualTo(200);
+
+        Integer activeRequests = jdbcTemplate.queryForObject("""
+                SELECT count(*) FROM account_deletion_request
+                WHERE user_id = 'local-user'
+                  AND status = 'AWAITING_FINAL_CONFIRMATION'
+                """, Integer.class);
+        Integer canceledRequests = jdbcTemplate.queryForObject("""
+                SELECT count(*) FROM account_deletion_request
+                WHERE user_id = 'local-user' AND status = 'CANCELED'
+                """, Integer.class);
+        Integer users = jdbcTemplate.queryForObject("""
+                SELECT count(*) FROM app_user WHERE id = 'local-user'
+                """, Integer.class);
+        assertThat(activeRequests).isEqualTo(1);
+        assertThat(canceledRequests).isEqualTo(1);
+        assertThat(users).isEqualTo(1);
     }
 
     private JsonNode push(String mutation) throws Exception {

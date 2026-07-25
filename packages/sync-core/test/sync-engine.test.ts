@@ -96,6 +96,9 @@ function memoryDatabase(initialMutation?: OutboxMutation) {
         [...conflicts.values()].filter((value) => value.resolvedAt === undefined),
       save: async (value) => void conflicts.set(value.id, value),
     },
+    preferences: {} as StorageTransaction["preferences"],
+    restorePoints: {} as StorageTransaction["restorePoints"],
+    dataManagement: {} as StorageTransaction["dataManagement"],
   };
   const database: LocalDatabase = {
     transaction: async (work) => work(transaction),

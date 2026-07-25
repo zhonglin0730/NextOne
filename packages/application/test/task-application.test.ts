@@ -191,6 +191,9 @@ function createMemoryDatabase() {
     outbox: new MemoryOutboxRepository(outbox),
     syncState: new MemorySyncStateRepository(),
     syncConflicts: new MemorySyncConflictRepository(),
+    preferences: {} as StorageTransaction["preferences"],
+    restorePoints: {} as StorageTransaction["restorePoints"],
+    dataManagement: {} as StorageTransaction["dataManagement"],
   };
   const database: LocalDatabase = {
     transaction: async <T>(work: (value: StorageTransaction) => Promise<T>) => work(transaction),
@@ -328,6 +331,38 @@ describe("task application service", () => {
     const started = await service.transition(tasks[3]!.id, "DOING");
 
     expect(started.status).toBe("DOING");
+  });
+
+  it("loads configurable action limits before making WIP and focus decisions", async () => {
+    const state = createMemoryDatabase();
+    let id = 500;
+    const service = new TaskApplicationService({
+      database: state.database,
+      userId: "local-user",
+      generateId: () => `rules-id-${++id}`,
+      now: () => `2026-07-24T13:${String(id - 500).padStart(2, "0")}:00.000Z`,
+      loadRules: async () => ({
+        focusLimit: 1,
+        wipLimit: 1,
+        staleDays: 10,
+        waitingDays: 5,
+      }),
+    });
+    const first = await service.capture({ title: "第一项" });
+    const second = await service.capture({ title: "第二项" });
+    await service.transition(first.id, "READY");
+    await service.transition(second.id, "READY");
+    await service.transition(first.id, "DOING");
+
+    await expect(service.transition(second.id, "DOING")).rejects.toBeInstanceOf(
+      WipLimitExceededError,
+    );
+    expect((await service.addToToday(first.id, "2026-07-24", "Asia/Shanghai")).section).toBe(
+      "FOCUS",
+    );
+    expect((await service.addToToday(second.id, "2026-07-24", "Asia/Shanghai")).section).toBe(
+      "LATER",
+    );
   });
 
   it("uses one board operation to move tasks into and out of someday", async () => {

@@ -6,38 +6,14 @@ import {
 } from "@nextone/sync-core";
 
 import { nextOneDatabase } from "../storage/indexedDb";
-
-const apiUrlKey = "nextone.sync.apiUrl";
-const tokenKey = "nextone.sync.token";
-const deviceIdKey = "nextone.sync.deviceId";
+import {
+  getDeviceId,
+  getSyncConfiguration,
+  saveSyncConfiguration,
+  type SyncConfiguration,
+} from "./config";
 const syncChangedEvent = "nextone:sync-changed";
-
-export interface SyncConfiguration {
-  apiUrl: string;
-  token: string;
-}
-
-export function getSyncConfiguration(): SyncConfiguration {
-  return {
-    apiUrl: localStorage.getItem(apiUrlKey) ?? "http://127.0.0.1:8080",
-    token: localStorage.getItem(tokenKey) ?? "nextone-local-dev-token",
-  };
-}
-
-export function saveSyncConfiguration(configuration: SyncConfiguration): void {
-  localStorage.setItem(apiUrlKey, configuration.apiUrl.replace(/\/+$/, ""));
-  localStorage.setItem(tokenKey, configuration.token);
-}
-
-function getDeviceId(): string {
-  const existing = localStorage.getItem(deviceIdKey);
-  if (existing !== null) {
-    return existing;
-  }
-  const deviceId = crypto.randomUUID();
-  localStorage.setItem(deviceIdKey, deviceId);
-  return deviceId;
-}
+export { getSyncConfiguration, saveSyncConfiguration, type SyncConfiguration };
 
 async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const configuration = getSyncConfiguration();

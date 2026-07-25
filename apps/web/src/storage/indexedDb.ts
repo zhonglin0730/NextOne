@@ -1,13 +1,17 @@
 import type { Area, DailyPlan, DailyPlanItem, Project, Task, TaskEvent } from "@nextone/domain";
 import type {
   AreaRepository,
+  DataManagementRepository,
   DailyPlanItemRepository,
   DailyPlanRepository,
   LocalDatabase,
+  LocalDataSnapshot,
   OutboxMutation,
   OutboxRepository,
   ProjectQuery,
   ProjectRepository,
+  RestorePoint,
+  RestorePointRepository,
   StorageTransaction,
   SyncConflict,
   SyncConflictRepository,
@@ -16,10 +20,12 @@ import type {
   TaskEventRepository,
   TaskQuery,
   TaskRepository,
+  UserPreferences,
+  UserPreferencesRepository,
 } from "@nextone/storage-contracts";
 
 const databaseName = "nextone";
-const databaseVersion = 3;
+const databaseVersion = 4;
 
 const stores = {
   tasks: "tasks",
@@ -31,6 +37,8 @@ const stores = {
   outbox: "outbox",
   syncState: "syncState",
   syncConflicts: "syncConflicts",
+  preferences: "preferences",
+  restorePoints: "restorePoints",
 } as const;
 
 function requestToPromise<T>(request: IDBRequest<T>): Promise<T> {
@@ -107,6 +115,17 @@ function createSchema(database: IDBDatabase): void {
   if (!database.objectStoreNames.contains(stores.syncConflicts)) {
     const conflictStore = database.createObjectStore(stores.syncConflicts, { keyPath: "id" });
     conflictStore.createIndex("createdAt", "createdAt", { unique: false });
+  }
+
+  if (!database.objectStoreNames.contains(stores.preferences)) {
+    database.createObjectStore(stores.preferences, { keyPath: "id" });
+  }
+
+  if (!database.objectStoreNames.contains(stores.restorePoints)) {
+    const restorePointStore = database.createObjectStore(stores.restorePoints, {
+      keyPath: "id",
+    });
+    restorePointStore.createIndex("createdAt", "createdAt", { unique: false });
   }
 }
 
@@ -323,6 +342,176 @@ class IndexedDbSyncConflictRepository implements SyncConflictRepository {
   }
 }
 
+class IndexedDbUserPreferencesRepository implements UserPreferencesRepository {
+  constructor(private readonly store: IDBObjectStore) {}
+
+  async get(): Promise<UserPreferences | undefined> {
+    return requestToPromise(this.store.get("default") as IDBRequest<UserPreferences | undefined>);
+  }
+
+  async save(preferences: UserPreferences): Promise<void> {
+    await requestToPromise(this.store.put(preferences));
+  }
+}
+
+class IndexedDbRestorePointRepository implements RestorePointRepository {
+  constructor(private readonly store: IDBObjectStore) {}
+
+  async list(): Promise<readonly RestorePoint[]> {
+    const restorePoints = await requestToPromise(this.store.getAll() as IDBRequest<RestorePoint[]>);
+    return restorePoints.sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+  }
+
+  async findById(id: string): Promise<RestorePoint | undefined> {
+    return requestToPromise(this.store.get(id) as IDBRequest<RestorePoint | undefined>);
+  }
+
+  async save(restorePoint: RestorePoint): Promise<void> {
+    await requestToPromise(this.store.put(restorePoint));
+  }
+
+  async remove(id: string): Promise<void> {
+    await requestToPromise(this.store.delete(id));
+  }
+}
+
+class IndexedDbDataManagementRepository implements DataManagementRepository {
+  constructor(private readonly objectStores: Readonly<Record<string, IDBObjectStore>>) {}
+
+  private store(name: keyof typeof stores): IDBObjectStore {
+    const store = this.objectStores[stores[name]];
+    if (store === undefined) {
+      throw new Error(`IndexedDB store ${name} is unavailable`);
+    }
+    return store;
+  }
+
+  async exportSnapshot(exportedAt: string): Promise<LocalDataSnapshot> {
+    const [tasks, areas, projects, taskEvents, dailyPlans, dailyPlanItems, preferences] =
+      await Promise.all([
+        requestToPromise(this.store("tasks").getAll() as IDBRequest<Task[]>),
+        requestToPromise(this.store("areas").getAll() as IDBRequest<Area[]>),
+        requestToPromise(this.store("projects").getAll() as IDBRequest<Project[]>),
+        requestToPromise(this.store("taskEvents").getAll() as IDBRequest<TaskEvent[]>),
+        requestToPromise(this.store("dailyPlans").getAll() as IDBRequest<DailyPlan[]>),
+        requestToPromise(this.store("dailyPlanItems").getAll() as IDBRequest<DailyPlanItem[]>),
+        requestToPromise(
+          this.store("preferences").get("default") as IDBRequest<UserPreferences | undefined>,
+        ),
+      ]);
+    return {
+      schemaVersion: 1,
+      exportedAt,
+      tasks,
+      areas,
+      projects,
+      taskEvents,
+      dailyPlans,
+      dailyPlanItems,
+      ...(preferences === undefined ? {} : { preferences }),
+    };
+  }
+
+  async replaceWithSnapshot(snapshot: LocalDataSnapshot, occurredAt: string): Promise<void> {
+    const replaceableStores = [
+      "tasks",
+      "areas",
+      "projects",
+      "taskEvents",
+      "dailyPlans",
+      "dailyPlanItems",
+      "outbox",
+      "syncState",
+      "syncConflicts",
+      "preferences",
+    ] as const;
+    for (const storeName of replaceableStores) {
+      await requestToPromise(this.store(storeName).clear());
+    }
+    for (const value of snapshot.areas) {
+      await requestToPromise(this.store("areas").put(value));
+    }
+    for (const value of snapshot.projects) {
+      await requestToPromise(this.store("projects").put(value));
+    }
+    for (const value of snapshot.tasks) {
+      await requestToPromise(this.store("tasks").put(value));
+    }
+    for (const value of snapshot.taskEvents) {
+      await requestToPromise(this.store("taskEvents").put(value));
+    }
+    for (const value of snapshot.dailyPlans) {
+      await requestToPromise(this.store("dailyPlans").put(value));
+    }
+    for (const value of snapshot.dailyPlanItems) {
+      await requestToPromise(this.store("dailyPlanItems").put(value));
+    }
+    if (snapshot.preferences !== undefined) {
+      await requestToPromise(this.store("preferences").put(snapshot.preferences));
+    }
+
+    const syncEntities: readonly {
+      entityType: OutboxMutation["entityType"];
+      id: string;
+      revision: number;
+      deleted: boolean;
+      payload: unknown;
+    }[] = [
+      ...snapshot.projects.map((project) => ({
+        entityType: "PROJECT" as const,
+        id: project.id,
+        revision: project.revision,
+        deleted: project.deletedAt !== undefined,
+        payload: project,
+      })),
+      ...snapshot.tasks.map((task) => ({
+        entityType: "TASK" as const,
+        id: task.id,
+        revision: task.revision,
+        deleted: task.deletedAt !== undefined,
+        payload: task,
+      })),
+      ...snapshot.dailyPlans.map((plan) => ({
+        entityType: "DAILY_PLAN" as const,
+        id: plan.id,
+        revision: plan.revision,
+        deleted: false,
+        payload: plan,
+      })),
+      ...snapshot.dailyPlanItems.map((item) => ({
+        entityType: "DAILY_PLAN_ITEM" as const,
+        id: item.id,
+        revision: 0,
+        deleted: false,
+        payload: item,
+      })),
+    ];
+    for (const entity of syncEntities) {
+      const mutation: OutboxMutation = {
+        id: crypto.randomUUID(),
+        userId: "local-user",
+        entityType: entity.entityType,
+        entityId: entity.id,
+        operation: entity.deleted ? "DELETE" : "UPSERT",
+        baseRevision: Math.max(0, entity.revision - 1),
+        payload: entity.payload,
+        createdAt: occurredAt,
+        attempts: 0,
+      };
+      await requestToPromise(this.store("outbox").put(mutation));
+    }
+  }
+
+  async clearLocalCopy(): Promise<void> {
+    for (const storeName of Object.keys(this.objectStores)) {
+      const store = this.objectStores[storeName];
+      if (store !== undefined) {
+        await requestToPromise(store.clear());
+      }
+    }
+  }
+}
+
 export class IndexedDbLocalDatabase implements LocalDatabase {
   private databasePromise: Promise<IDBDatabase> | undefined;
 
@@ -335,6 +524,12 @@ export class IndexedDbLocalDatabase implements LocalDatabase {
     const database = await this.getDatabase();
     const indexedDbTransaction = database.transaction(Object.values(stores), "readwrite");
     const completion = transactionToPromise(indexedDbTransaction);
+    const objectStores = Object.fromEntries(
+      Object.values(stores).map((storeName) => [
+        storeName,
+        indexedDbTransaction.objectStore(storeName),
+      ]),
+    );
     const transaction: StorageTransaction = {
       tasks: new IndexedDbTaskRepository(indexedDbTransaction.objectStore(stores.tasks)),
       areas: new IndexedDbAreaRepository(indexedDbTransaction.objectStore(stores.areas)),
@@ -355,6 +550,13 @@ export class IndexedDbLocalDatabase implements LocalDatabase {
       syncConflicts: new IndexedDbSyncConflictRepository(
         indexedDbTransaction.objectStore(stores.syncConflicts),
       ),
+      preferences: new IndexedDbUserPreferencesRepository(
+        indexedDbTransaction.objectStore(stores.preferences),
+      ),
+      restorePoints: new IndexedDbRestorePointRepository(
+        indexedDbTransaction.objectStore(stores.restorePoints),
+      ),
+      dataManagement: new IndexedDbDataManagementRepository(objectStores),
     };
 
     try {

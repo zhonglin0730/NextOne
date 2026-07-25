@@ -48,7 +48,7 @@ public class BootstrapController {
     BootstrapResponse bootstrap() {
         SingleUserPrincipal user = currentUser.get();
         return new BootstrapResponse(
-                3,
+                4,
                 user,
                 tasks.list(user.id(), true),
                 projects.list(user.id()),

@@ -11,6 +11,9 @@ import { ReviewCenterPage } from "./review/ReviewCenterPage";
 import { SyncIndicator } from "./sync/SyncIndicator";
 import { startAutomaticSync } from "./sync/syncService";
 import { SyncStatusPage } from "./sync/SyncStatusPage";
+import { DataManagementPage } from "./settings/DataManagementPage";
+import { SettingsPage } from "./settings/SettingsPage";
+import { loadPreferences, localeStorageKey, savePreferences } from "./settings/preferences";
 import { CaptureDialog } from "./tasks/CaptureDialog";
 import { InboxPage } from "./tasks/InboxPage";
 import { TodayPage } from "./today/TodayPage";
@@ -21,7 +24,7 @@ const navigation = [
   { key: "board", path: "/board" },
   { key: "projects", path: "/projects" },
   { key: "review", path: "/review" },
-  { key: "settings", path: "/settings/sync" },
+  { key: "settings", path: "/settings/general" },
 ] as const;
 
 type NavigationKey = (typeof navigation)[number]["key"];
@@ -42,10 +45,23 @@ function AppShell() {
   const { i18n, t } = useTranslation();
   const [captureOpen, setCaptureOpen] = useState(false);
 
-  useEffect(() => startAutomaticSync(), []);
+  useEffect(() => {
+    const stopSync = startAutomaticSync();
+    void loadPreferences().then((preferences) => {
+      document.documentElement.dataset.theme = preferences.theme.toLowerCase();
+    });
+    return stopSync;
+  }, []);
 
-  const changeLocale = (locale: SupportedLocale) => {
-    void i18n.changeLanguage(locale);
+  const changeLocale = async (locale: SupportedLocale) => {
+    await i18n.changeLanguage(locale);
+    localStorage.setItem(localeStorageKey, locale);
+    const preferences = await loadPreferences();
+    await savePreferences({
+      ...preferences,
+      locale,
+      updatedAt: new Date().toISOString(),
+    });
     document.documentElement.lang = locale;
   };
 
@@ -74,7 +90,7 @@ function AppShell() {
         <label className="locale-field">
           <span>{t("shell.locale")}</span>
           <select
-            onChange={(event) => changeLocale(event.target.value as SupportedLocale)}
+            onChange={(event) => void changeLocale(event.target.value as SupportedLocale)}
             value={i18n.resolvedLanguage ?? i18n.language}
           >
             {supportedLocales.map((locale) => (
@@ -105,6 +121,8 @@ function AppShell() {
           <Route element={<ReviewCenterPage />} path="/review" />
           <Route element={<DailyClosePage />} path="/review/daily" />
           <Route element={<SyncStatusPage />} path="/settings/sync" />
+          <Route element={<SettingsPage />} path="/settings/general" />
+          <Route element={<DataManagementPage />} path="/settings/data" />
           {navigation
             .filter(
               (item) =>

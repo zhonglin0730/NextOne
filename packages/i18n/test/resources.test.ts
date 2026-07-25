@@ -8,5 +8,7 @@ describe("shared language resources", () => {
     expect(enXA.nav.today).not.toBe(zhCN.nav.today);
     expect(enXA.nav.today).toContain("［");
     expect(enXA.app.name).toBe("NextOne");
+    expect(enXA.settings.region.locale).not.toBe(zhCN.settings.region.locale);
+    expect(enXA.data.clearDescription).toContain("［");
   });
 });

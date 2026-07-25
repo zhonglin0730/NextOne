@@ -43,6 +43,14 @@ export interface TaskApplicationDependencies {
   generateId: () => string;
   now: () => string;
   wipLimit?: number;
+  loadRules?: () => Promise<Partial<ActionRules>>;
+}
+
+export interface ActionRules {
+  focusLimit: number;
+  wipLimit: number;
+  staleDays: number;
+  waitingDays: number;
 }
 
 export interface TransitionTaskOptions {
@@ -438,7 +446,8 @@ export class TaskApplicationService {
       }
 
       const occurredAt = this.dependencies.now();
-      const wipLimit = this.dependencies.wipLimit ?? 3;
+      const rules = await this.dependencies.loadRules?.();
+      const wipLimit = rules?.wipLimit ?? this.dependencies.wipLimit ?? 3;
       let wipOverrideEvent: TaskEvent | undefined;
 
       if (to === "DOING" && current.status !== "DOING") {
@@ -720,7 +729,9 @@ export class TaskApplicationService {
 
       const planItems = await transaction.dailyPlanItems.listByPlanId(plan.id);
       const focusCount = planItems.filter((item) => item.section === "FOCUS").length;
-      const section = requestedSection ?? (focusCount < 3 ? "FOCUS" : "LATER");
+      const rules = await this.dependencies.loadRules?.();
+      const focusLimit = rules?.focusLimit ?? 3;
+      const section = requestedSection ?? (focusCount < focusLimit ? "FOCUS" : "LATER");
       const item: DailyPlanItem = {
         id: this.dependencies.generateId(),
         planId: plan.id,
@@ -844,8 +855,9 @@ export class ReviewApplicationService {
   async getCenter(now: string): Promise<ReviewCenterView> {
     return this.dependencies.database.transaction(async (transaction) => {
       const nowValue = timeValue(now) ?? Date.now();
-      const staleCutoff = nowValue - 14 * 86_400_000;
-      const waitingCutoff = nowValue - 7 * 86_400_000;
+      const rules = await this.dependencies.loadRules?.();
+      const staleCutoff = nowValue - (rules?.staleDays ?? 14) * 86_400_000;
+      const waitingCutoff = nowValue - (rules?.waitingDays ?? 7) * 86_400_000;
       const doingCutoff = nowValue - 7 * 86_400_000;
       const deadlineCutoff = nowValue + 3 * 86_400_000;
       const tasks = await transaction.tasks.list();

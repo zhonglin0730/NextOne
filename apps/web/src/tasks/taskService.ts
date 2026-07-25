@@ -5,6 +5,7 @@ import {
 } from "@nextone/application";
 
 import { nextOneDatabase } from "../storage/indexedDb";
+import { loadActionRules } from "../settings/preferences";
 
 export const tasksChangedEvent = "nextone:tasks-changed";
 
@@ -14,6 +15,7 @@ const applicationDependencies = {
   generateId: () => crypto.randomUUID(),
   now: () => new Date().toISOString(),
   wipLimit: 3,
+  loadRules: loadActionRules,
 };
 
 export const taskApplicationService = new TaskApplicationService(applicationDependencies);

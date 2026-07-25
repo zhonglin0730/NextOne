@@ -401,6 +401,42 @@ paths:
       responses:
         "200":
           description: Ordered changes after the supplied server cursor
+  /api/v1/account/deletion-requests:
+    post:
+      operationId: createAccountDeletionRequest
+      description: Creates a short-lived, non-destructive request for the separate final deletion flow.
+      responses:
+        "200":
+          description: Deletion request awaiting explicit final confirmation
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - requestId
+                  - status
+                  - createdAt
+                  - expiresAt
+                  - backupConfirmationRequired
+                  - finalDeletionAvailable
+                properties:
+                  requestId:
+                    type: string
+                  status:
+                    type: string
+                    enum: [AWAITING_FINAL_CONFIRMATION]
+                  createdAt:
+                    type: string
+                    format: date-time
+                  expiresAt:
+                    type: string
+                    format: date-time
+                  backupConfirmationRequired:
+                    type: boolean
+                    const: true
+                  finalDeletionAvailable:
+                    type: boolean
+                    const: false
 components:
   securitySchemes:
     bearerAuth:

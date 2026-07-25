@@ -6,13 +6,18 @@ export function getLocalDate(date = new Date()): string {
 }
 
 export function getTimeZone(): string {
-  return Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Shanghai";
+  return (
+    localStorage.getItem("nextone.preferences.timeZone") ??
+    Intl.DateTimeFormat().resolvedOptions().timeZone ??
+    "Asia/Shanghai"
+  );
 }
 
 export function getWeekStartsAt(now = new Date()): string {
-  const monday = new Date(now);
-  const daysSinceMonday = (monday.getDay() + 6) % 7;
-  monday.setDate(monday.getDate() - daysSinceMonday);
-  monday.setHours(0, 0, 0, 0);
-  return monday.toISOString();
+  const start = new Date(now);
+  const weekStartsOn = localStorage.getItem("nextone.preferences.weekStartsOn") ?? "MONDAY";
+  const daysSinceStart = weekStartsOn === "SUNDAY" ? start.getDay() : (start.getDay() + 6) % 7;
+  start.setDate(start.getDate() - daysSinceStart);
+  start.setHours(0, 0, 0, 0);
+  return start.toISOString();
 }
