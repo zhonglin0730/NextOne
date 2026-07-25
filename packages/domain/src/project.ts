@@ -11,5 +11,6 @@ export interface Project {
   sortKey: string;
   createdAt: string;
   updatedAt: string;
+  deletedAt?: string;
   revision: number;
 }

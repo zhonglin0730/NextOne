@@ -66,15 +66,53 @@ export interface OutboxMutation {
   entityType: OutboxEntityType;
   entityId: string;
   operation: OutboxOperation;
+  baseRevision: number;
   payload: unknown;
   createdAt: string;
   attempts: number;
+  status?: "PENDING" | "BLOCKED";
+  lastAttemptAt?: string;
+  nextAttemptAt?: string;
+  lastError?: string;
 }
 
 export interface OutboxRepository {
   listPending(): Promise<readonly OutboxMutation[]>;
+  listAll(): Promise<readonly OutboxMutation[]>;
   append(mutation: OutboxMutation): Promise<void>;
+  update(mutation: OutboxMutation): Promise<void>;
   remove(id: string): Promise<void>;
+}
+
+export interface SyncState {
+  id: "default";
+  cursor: number;
+  status: "OFFLINE" | "SYNCING" | "UP_TO_DATE" | "ERROR";
+  lastSyncAt?: string;
+  lastError?: string;
+  retryCount: number;
+  nextRetryAt?: string;
+}
+
+export interface SyncConflict {
+  id: string;
+  entityType: OutboxEntityType;
+  entityId: string;
+  code: string;
+  localPayload: unknown;
+  serverPayload?: unknown;
+  createdAt: string;
+  resolvedAt?: string;
+}
+
+export interface SyncStateRepository {
+  get(): Promise<SyncState | undefined>;
+  save(state: SyncState): Promise<void>;
+}
+
+export interface SyncConflictRepository {
+  listOpen(): Promise<readonly SyncConflict[]>;
+  save(conflict: SyncConflict): Promise<void>;
 }
 
 export interface StorageTransaction {
@@ -85,6 +123,8 @@ export interface StorageTransaction {
   dailyPlans: DailyPlanRepository;
   dailyPlanItems: DailyPlanItemRepository;
   outbox: OutboxRepository;
+  syncState: SyncStateRepository;
+  syncConflicts: SyncConflictRepository;
 }
 
 export interface LocalDatabase {

@@ -9,13 +9,17 @@ import type {
   ProjectQuery,
   ProjectRepository,
   StorageTransaction,
+  SyncConflict,
+  SyncConflictRepository,
+  SyncState,
+  SyncStateRepository,
   TaskEventRepository,
   TaskQuery,
   TaskRepository,
 } from "@nextone/storage-contracts";
 
 const databaseName = "nextone";
-const databaseVersion = 2;
+const databaseVersion = 3;
 
 const stores = {
   tasks: "tasks",
@@ -25,6 +29,8 @@ const stores = {
   dailyPlans: "dailyPlans",
   dailyPlanItems: "dailyPlanItems",
   outbox: "outbox",
+  syncState: "syncState",
+  syncConflicts: "syncConflicts",
 } as const;
 
 function requestToPromise<T>(request: IDBRequest<T>): Promise<T> {
@@ -93,6 +99,15 @@ function createSchema(database: IDBDatabase): void {
     const outboxStore = database.createObjectStore(stores.outbox, { keyPath: "id" });
     outboxStore.createIndex("createdAt", "createdAt", { unique: false });
   }
+
+  if (!database.objectStoreNames.contains(stores.syncState)) {
+    database.createObjectStore(stores.syncState, { keyPath: "id" });
+  }
+
+  if (!database.objectStoreNames.contains(stores.syncConflicts)) {
+    const conflictStore = database.createObjectStore(stores.syncConflicts, { keyPath: "id" });
+    conflictStore.createIndex("createdAt", "createdAt", { unique: false });
+  }
 }
 
 function openDatabase(): Promise<IDBDatabase> {
@@ -133,6 +148,7 @@ class IndexedDbTaskRepository implements TaskRepository {
     return tasks
       .filter(
         (task) =>
+          task.deletedAt === undefined &&
           (query?.status === undefined || task.status === query.status) &&
           (query?.statuses === undefined || query.statuses.includes(task.status)) &&
           (query?.projectId === undefined || task.projectId === query.projectId) &&
@@ -176,6 +192,7 @@ class IndexedDbProjectRepository implements ProjectRepository {
     return projects
       .filter(
         (project) =>
+          project.deletedAt === undefined &&
           (query?.areaId === undefined || project.areaId === query.areaId) &&
           (query?.status === undefined || project.status === query.status),
       )
@@ -251,6 +268,18 @@ class IndexedDbOutboxRepository implements OutboxRepository {
 
   async listPending(): Promise<readonly OutboxMutation[]> {
     const mutations = await requestToPromise(this.store.getAll() as IDBRequest<OutboxMutation[]>);
+    const now = new Date().toISOString();
+    return mutations
+      .filter(
+        (mutation) =>
+          mutation.status !== "BLOCKED" &&
+          (mutation.nextAttemptAt === undefined || mutation.nextAttemptAt <= now),
+      )
+      .sort((left, right) => left.createdAt.localeCompare(right.createdAt));
+  }
+
+  async listAll(): Promise<readonly OutboxMutation[]> {
+    const mutations = await requestToPromise(this.store.getAll() as IDBRequest<OutboxMutation[]>);
     return mutations.sort((left, right) => left.createdAt.localeCompare(right.createdAt));
   }
 
@@ -258,8 +287,39 @@ class IndexedDbOutboxRepository implements OutboxRepository {
     await requestToPromise(this.store.add(mutation));
   }
 
+  async update(mutation: OutboxMutation): Promise<void> {
+    await requestToPromise(this.store.put(mutation));
+  }
+
   async remove(id: string): Promise<void> {
     await requestToPromise(this.store.delete(id));
+  }
+}
+
+class IndexedDbSyncStateRepository implements SyncStateRepository {
+  constructor(private readonly store: IDBObjectStore) {}
+
+  async get(): Promise<SyncState | undefined> {
+    return requestToPromise(this.store.get("default") as IDBRequest<SyncState | undefined>);
+  }
+
+  async save(state: SyncState): Promise<void> {
+    await requestToPromise(this.store.put(state));
+  }
+}
+
+class IndexedDbSyncConflictRepository implements SyncConflictRepository {
+  constructor(private readonly store: IDBObjectStore) {}
+
+  async listOpen(): Promise<readonly SyncConflict[]> {
+    const conflicts = await requestToPromise(this.store.getAll() as IDBRequest<SyncConflict[]>);
+    return conflicts
+      .filter((conflict) => conflict.resolvedAt === undefined)
+      .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+  }
+
+  async save(conflict: SyncConflict): Promise<void> {
+    await requestToPromise(this.store.put(conflict));
   }
 }
 
@@ -289,6 +349,12 @@ export class IndexedDbLocalDatabase implements LocalDatabase {
         indexedDbTransaction.objectStore(stores.dailyPlanItems),
       ),
       outbox: new IndexedDbOutboxRepository(indexedDbTransaction.objectStore(stores.outbox)),
+      syncState: new IndexedDbSyncStateRepository(
+        indexedDbTransaction.objectStore(stores.syncState),
+      ),
+      syncConflicts: new IndexedDbSyncConflictRepository(
+        indexedDbTransaction.objectStore(stores.syncConflicts),
+      ),
     };
 
     try {

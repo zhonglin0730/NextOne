@@ -4,9 +4,9 @@
 
 NextOne 是一个主动帮助用户做取舍的个人行动系统。
 
-当前仓库已完成 V0.1 M5 服务端持久化：Web 端已具备快速记录、今日计划、执行看板、
-项目焦点、每日收尾与基础回顾；服务端已具备 PostgreSQL 持久化、Flyway、封闭单用户认证、
-核心领域 API、Bootstrap、统一错误码和 OpenAPI 契约。产品和开发文档位于 `docs/`。
+当前仓库已完成 V0.1 M6 同步：Web 端已具备快速记录、今日计划、执行看板、
+项目焦点、每日收尾与基础回顾；IndexedDB Outbox 已接通 Spring Boot/PostgreSQL，
+支持幂等推送、增量拉取、离线重试和显式冲突处理。产品和开发文档位于 `docs/`。
 
 ## 本机要求
 
@@ -48,6 +48,6 @@ pnpm server:run
 ## 当前边界
 
 - 当前已实现 Web 工程基线、本地任务内核、今天页、执行看板、项目焦点、每日收尾与基础回顾；
-- M5 已实现 PostgreSQL 服务端持久化，但浏览器 IndexedDB 与服务端的 Outbox 同步将在 M6 接通；
+- M6 已接通浏览器 IndexedDB Outbox 与服务端，并提供 `/settings/sync` 同步状态与冲突处理页；
 - Android、标准 OIDC 认证和 Oracle 部署将在后续里程碑实现；
 - 不依赖 Supabase、Redis、消息队列或付费 SaaS。

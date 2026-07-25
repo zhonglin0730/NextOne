@@ -365,6 +365,42 @@ paths:
       responses:
         "200":
           description: Recent task events
+  /api/v1/sync/push:
+    post:
+      operationId: pushSyncMutations
+      description: Applies up to 100 client mutations idempotently.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SyncPushRequest"
+      responses:
+        "200":
+          description: Per-mutation apply, conflict, or rejection results
+        "400":
+          $ref: "#/components/responses/ApiError"
+  /api/v1/sync/pull:
+    get:
+      operationId: pullSyncChanges
+      parameters:
+        - name: cursor
+          in: query
+          schema:
+            type: integer
+            format: int64
+            minimum: 0
+            default: 0
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 200
+      responses:
+        "200":
+          description: Ordered changes after the supplied server cursor
 components:
   securitySchemes:
     bearerAuth:
@@ -488,6 +524,47 @@ components:
               type: integer
               format: int64
               minimum: 1
+    SyncPushRequest:
+      type: object
+      required: [deviceId, mutations]
+      properties:
+        deviceId:
+          type: string
+        mutations:
+          type: array
+          maxItems: 100
+          items:
+            $ref: "#/components/schemas/SyncMutation"
+    SyncMutation:
+      type: object
+      required:
+        - clientMutationId
+        - entityType
+        - entityId
+        - operation
+        - baseRevision
+        - occurredAt
+      properties:
+        clientMutationId:
+          type: string
+        entityType:
+          type: string
+          enum: [TASK, PROJECT, DAILY_PLAN, DAILY_PLAN_ITEM]
+        entityId:
+          type: string
+        operation:
+          type: string
+          enum: [UPSERT, DELETE]
+        baseRevision:
+          type: integer
+          format: int64
+          minimum: 0
+        occurredAt:
+          type: string
+          format: date-time
+        payload:
+          type: object
+          additionalProperties: true
     Error:
       type: object
       required: [code, parameters]

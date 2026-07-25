@@ -1,5 +1,5 @@
 import { supportedLocales, type SupportedLocale } from "@nextone/i18n";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { BrowserRouter, Navigate, NavLink, Route, Routes } from "react-router";
 
@@ -8,6 +8,9 @@ import { ProjectDetailPage } from "./projects/ProjectDetailPage";
 import { ProjectsPage } from "./projects/ProjectsPage";
 import { DailyClosePage } from "./review/DailyClosePage";
 import { ReviewCenterPage } from "./review/ReviewCenterPage";
+import { SyncIndicator } from "./sync/SyncIndicator";
+import { startAutomaticSync } from "./sync/syncService";
+import { SyncStatusPage } from "./sync/SyncStatusPage";
 import { CaptureDialog } from "./tasks/CaptureDialog";
 import { InboxPage } from "./tasks/InboxPage";
 import { TodayPage } from "./today/TodayPage";
@@ -18,7 +21,7 @@ const navigation = [
   { key: "board", path: "/board" },
   { key: "projects", path: "/projects" },
   { key: "review", path: "/review" },
-  { key: "settings", path: "/settings/general" },
+  { key: "settings", path: "/settings/sync" },
 ] as const;
 
 type NavigationKey = (typeof navigation)[number]["key"];
@@ -38,6 +41,8 @@ function PlaceholderPage({ pageKey }: { pageKey: NavigationKey }) {
 function AppShell() {
   const { i18n, t } = useTranslation();
   const [captureOpen, setCaptureOpen] = useState(false);
+
+  useEffect(() => startAutomaticSync(), []);
 
   const changeLocale = (locale: SupportedLocale) => {
     void i18n.changeLanguage(locale);
@@ -83,10 +88,7 @@ function AppShell() {
 
       <main className="main-content">
         <header className="topbar">
-          <span className="local-status">
-            <span aria-hidden="true">●</span>
-            {t("shell.offlineReady")}
-          </span>
+          <SyncIndicator />
           <button className="capture-button" onClick={() => setCaptureOpen(true)} type="button">
             <span aria-hidden="true">＋</span>
             {t("shell.quickCapture")}
@@ -102,8 +104,12 @@ function AppShell() {
           <Route element={<ProjectDetailPage />} path="/projects/:projectId" />
           <Route element={<ReviewCenterPage />} path="/review" />
           <Route element={<DailyClosePage />} path="/review/daily" />
+          <Route element={<SyncStatusPage />} path="/settings/sync" />
           {navigation
-            .filter((item) => !["today", "inbox", "board", "projects", "review"].includes(item.key))
+            .filter(
+              (item) =>
+                !["today", "inbox", "board", "projects", "review", "settings"].includes(item.key),
+            )
             .map((item) => (
               <Route
                 element={<PlaceholderPage pageKey={item.key} />}

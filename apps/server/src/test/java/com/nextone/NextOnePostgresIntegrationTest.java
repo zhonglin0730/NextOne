@@ -65,9 +65,9 @@ class NextOnePostgresIntegrationTest {
         Integer migrationCount = jdbcTemplate.queryForObject("""
                 SELECT count(*)
                 FROM flyway_schema_history
-                WHERE success = true AND version IN ('1', '2')
+                WHERE success = true AND version IN ('1', '2', '3')
                 """, Integer.class);
-        assertThat(migrationCount).isEqualTo(2);
+        assertThat(migrationCount).isEqualTo(3);
 
         HttpResponse<String> response = send("GET", "/api/v1/me", null, null);
         assertThat(response.statusCode()).isEqualTo(401);
@@ -118,6 +118,12 @@ class NextOnePostgresIntegrationTest {
                 WHERE table_schema = 'existing_v1' AND table_name = 'task'
                 """, Integer.class);
         assertThat(taskTableAfterUpgrade).isEqualTo(1);
+        Integer syncTableAfterUpgrade = jdbcTemplate.queryForObject("""
+                SELECT count(*)
+                FROM information_schema.tables
+                WHERE table_schema = 'existing_v1' AND table_name = 'sync_mutation'
+                """, Integer.class);
+        assertThat(syncTableAfterUpgrade).isEqualTo(1);
     }
 
     @Test
@@ -265,6 +271,154 @@ class NextOnePostgresIntegrationTest {
         assertThat(invalidFocus.statusCode()).isEqualTo(409);
         assertThat(jsonMapper.readTree(invalidFocus.body()).get("code").asString())
                 .isEqualTo("PROJECT_FOCUS_TASK_INVALID");
+    }
+
+    @Test
+    @Order(5)
+    void synchronizesIdempotentlyMergesCompletionAndReportsDeleteConflicts() throws Exception {
+        String taskId = "sync-task";
+        String createMutation = mutationJson(
+                "sync-create",
+                taskId,
+                "UPSERT",
+                0,
+                taskPayload(taskId, "Original title", "INBOX", 1, null)
+        );
+        JsonNode created = push(createMutation);
+        assertThat(created.at("/results/0/status").asString()).isEqualTo("APPLIED");
+        assertThat(created.at("/results/0/revision").asLong()).isEqualTo(1);
+
+        JsonNode replayed = push(createMutation);
+        assertThat(replayed.at("/results/0/status").asString()).isEqualTo("ALREADY_APPLIED");
+        Integer taskCount = jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM task WHERE user_id = 'local-user' AND id = ?",
+                Integer.class,
+                taskId
+        );
+        Integer createChangeCount = jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM change_log WHERE user_id = 'local-user' AND entity_id = ?",
+                Integer.class,
+                taskId
+        );
+        assertThat(taskCount).isEqualTo(1);
+        assertThat(createChangeCount).isEqualTo(1);
+
+        JsonNode ready = push(mutationJson(
+                "sync-ready",
+                taskId,
+                "UPSERT",
+                1,
+                taskPayload(taskId, "Original title", "READY", 2, null)
+        ));
+        assertThat(ready.at("/results/0/status").asString()).isEqualTo("APPLIED");
+
+        JsonNode completed = push(mutationJson(
+                "sync-complete",
+                taskId,
+                "UPSERT",
+                2,
+                taskPayload(taskId, "Original title", "COMPLETED", 3,
+                        "2026-07-25T10:02:00Z")
+        ));
+        assertThat(completed.at("/results/0/status").asString()).isEqualTo("APPLIED");
+
+        JsonNode staleEdit = push(mutationJson(
+                "sync-stale-edit",
+                taskId,
+                "UPSERT",
+                2,
+                taskPayload(taskId, "Edited on another device", "READY", 3, null)
+        ));
+        assertThat(staleEdit.at("/results/0/status").asString()).isEqualTo("APPLIED");
+        assertThat(staleEdit.at("/results/0/serverPayload/status").asString())
+                .isEqualTo("COMPLETED");
+        assertThat(staleEdit.at("/results/0/serverPayload/title").asString())
+                .isEqualTo("Edited on another device");
+
+        JsonNode staleDelete = push(mutationJson(
+                "sync-stale-delete",
+                taskId,
+                "DELETE",
+                2,
+                null
+        ));
+        assertThat(staleDelete.at("/results/0/status").asString()).isEqualTo("CONFLICT");
+        assertThat(staleDelete.at("/results/0/errorCode").asString()).isEqualTo("DELETE_CONFLICT");
+
+        HttpResponse<String> pulled = send(
+                "GET",
+                "/api/v1/sync/pull?cursor=0&limit=100",
+                null,
+                "test-access-token"
+        );
+        assertThat(pulled.statusCode()).isEqualTo(200);
+        JsonNode pullBody = jsonMapper.readTree(pulled.body());
+        assertThat(pullBody.get("nextCursor").asLong()).isPositive();
+        assertThat(pullBody.get("changes").toString()).contains(taskId);
+    }
+
+    private JsonNode push(String mutation) throws Exception {
+        HttpResponse<String> response = send(
+                "POST",
+                "/api/v1/sync/push",
+                """
+                        {"deviceId":"integration-device","mutations":[%s]}
+                        """.formatted(mutation),
+                "test-access-token"
+        );
+        assertThat(response.statusCode()).isEqualTo(200);
+        return jsonMapper.readTree(response.body());
+    }
+
+    private String mutationJson(
+            String mutationId,
+            String entityId,
+            String operation,
+            long baseRevision,
+            String payload
+    ) {
+        return """
+                {
+                  "clientMutationId":"%s",
+                  "entityType":"TASK",
+                  "entityId":"%s",
+                  "operation":"%s",
+                  "baseRevision":%d,
+                  "occurredAt":"2026-07-25T10:05:00Z",
+                  "payload":%s
+                }
+                """.formatted(
+                mutationId,
+                entityId,
+                operation,
+                baseRevision,
+                payload == null ? "null" : payload
+        );
+    }
+
+    private String taskPayload(
+            String taskId,
+            String title,
+            String status,
+            long revision,
+            String completedAt
+    ) {
+        String completion = completedAt == null
+                ? ""
+                : ",\"completedAt\":\"" + completedAt + "\"";
+        return """
+                {
+                  "id":"%s",
+                  "userId":"local-user",
+                  "title":"%s",
+                  "status":"%s",
+                  "visibility":"ACTIVE",
+                  "sortKey":"2026-07-25T10:00:00Z",
+                  "createdAt":"2026-07-25T10:00:00Z",
+                  "updatedAt":"2026-07-25T10:04:00Z",
+                  "revision":%d%s
+                }
+                """.formatted(taskId, title, status, revision, completion);
     }
 
     private String createTask(String title, String projectId) throws Exception {

@@ -44,6 +44,9 @@ importers:
       '@nextone/storage-contracts':
         specifier: workspace:*
         version: link:../../packages/storage-contracts
+      '@nextone/sync-core':
+        specifier: workspace:*
+        version: link:../../packages/sync-core
       i18next:
         specifier: ^25.0.0
         version: 25.10.10(typescript@5.9.3)
@@ -131,6 +134,22 @@ importers:
       typescript:
         specifier: 'catalog:'
         version: 5.9.3
+
+  packages/sync-core:
+    dependencies:
+      '@nextone/domain':
+        specifier: workspace:*
+        version: link:../domain
+      '@nextone/storage-contracts':
+        specifier: workspace:*
+        version: link:../storage-contracts
+    devDependencies:
+      typescript:
+        specifier: 'catalog:'
+        version: 5.9.3
+      vitest:
+        specifier: 'catalog:'
+        version: 4.1.10(vite@8.1.5)
 
 packages:
 

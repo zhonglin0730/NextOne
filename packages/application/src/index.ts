@@ -139,6 +139,7 @@ function createOutboxMutation(
     entityType: OutboxMutation["entityType"];
     entityId: string;
     operation?: OutboxMutation["operation"];
+    baseRevision?: number;
     payload: unknown;
   },
   occurredAt: string,
@@ -150,6 +151,14 @@ function createOutboxMutation(
     entityType: input.entityType,
     entityId: input.entityId,
     operation: input.operation ?? "UPSERT",
+    baseRevision:
+      input.baseRevision ??
+      (typeof input.payload === "object" &&
+      input.payload !== null &&
+      "revision" in input.payload &&
+      typeof input.payload.revision === "number"
+        ? Math.max(0, input.payload.revision - 1)
+        : 0),
     payload: input.payload,
     createdAt: occurredAt,
     attempts: 0,

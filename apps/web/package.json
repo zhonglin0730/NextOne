@@ -15,6 +15,7 @@
     "@nextone/domain": "workspace:*",
     "@nextone/i18n": "workspace:*",
     "@nextone/storage-contracts": "workspace:*",
+    "@nextone/sync-core": "workspace:*",
     "i18next": "^25.0.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",

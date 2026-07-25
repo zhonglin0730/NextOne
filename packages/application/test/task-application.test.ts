@@ -8,6 +8,10 @@ import type {
   OutboxRepository,
   ProjectRepository,
   StorageTransaction,
+  SyncConflict,
+  SyncConflictRepository,
+  SyncState,
+  SyncStateRepository,
   TaskEventRepository,
   TaskQuery,
   TaskRepository,
@@ -122,8 +126,19 @@ class MemoryOutboxRepository implements OutboxRepository {
     return this.mutations;
   }
 
+  async listAll(): Promise<readonly OutboxMutation[]> {
+    return this.mutations;
+  }
+
   async append(mutation: OutboxMutation): Promise<void> {
     this.mutations.push(mutation);
+  }
+
+  async update(mutation: OutboxMutation): Promise<void> {
+    const index = this.mutations.findIndex((candidate) => candidate.id === mutation.id);
+    if (index >= 0) {
+      this.mutations[index] = mutation;
+    }
   }
 
   async remove(id: string): Promise<void> {
@@ -131,6 +146,30 @@ class MemoryOutboxRepository implements OutboxRepository {
     if (index >= 0) {
       this.mutations.splice(index, 1);
     }
+  }
+}
+
+class MemorySyncStateRepository implements SyncStateRepository {
+  state: SyncState | undefined;
+
+  async get(): Promise<SyncState | undefined> {
+    return this.state;
+  }
+
+  async save(state: SyncState): Promise<void> {
+    this.state = state;
+  }
+}
+
+class MemorySyncConflictRepository implements SyncConflictRepository {
+  conflicts: SyncConflict[] = [];
+
+  async listOpen(): Promise<readonly SyncConflict[]> {
+    return this.conflicts.filter((conflict) => conflict.resolvedAt === undefined);
+  }
+
+  async save(conflict: SyncConflict): Promise<void> {
+    this.conflicts.push(conflict);
   }
 }
 
@@ -150,6 +189,8 @@ function createMemoryDatabase() {
     dailyPlans: new MemoryDailyPlanRepository(plans),
     dailyPlanItems: new MemoryDailyPlanItemRepository(planItems),
     outbox: new MemoryOutboxRepository(outbox),
+    syncState: new MemorySyncStateRepository(),
+    syncConflicts: new MemorySyncConflictRepository(),
   };
   const database: LocalDatabase = {
     transaction: async <T>(work: (value: StorageTransaction) => Promise<T>) => work(transaction),

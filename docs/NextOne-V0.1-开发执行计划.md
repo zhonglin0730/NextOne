@@ -487,6 +487,18 @@ WIP_LIMIT_OVERRIDDEN
 
 ### M6：同步
 
+实施状态（2026-07-25）：
+
+- 已通过 Flyway V3 建立 `sync_mutation` 幂等记录和按用户递增读取的 `change_log`；
+- 已实现 `/api/v1/sync/push` 与 `/api/v1/sync/pull`，单次推送上限 100 条，拉取支持 cursor 和分页；
+- 已建立独立 `sync-core`，Outbox 成功后才删除，网络失败保留原操作并按 5 秒至 5 分钟指数退避；
+- 已兼容 M4/M5 已存在且没有 `baseRevision` 的浏览器 Outbox；
+- 已实现 revision 冲突、删除冲突和“完成优先但保留普通编辑内容”的合并规则；
+- 已实现 `/settings/sync` 状态页、服务器配置、手动同步，以及“保留本地并重试 / 使用服务器版本”的显式冲突处理；
+- 同步接收时间只写入同步表，任务 `updatedAt` 继续使用业务修改时间，不影响停滞判断；
+- 已通过 5 项 `sync-core` 测试、全量 TypeScript 检查与生产构建，以及 5 项真实 PostgreSQL 集成测试；
+- M6 已在本机完成端到端联调，不需要 Oracle 服务器；公网和多设备验收放到 M9 部署阶段。
+
 交付：
 
 - Outbox 推送；

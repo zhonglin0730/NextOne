@@ -4,12 +4,11 @@
 
 NextOne is a personal action system that proactively helps users make trade-offs.
 
-The repository has completed V0.1 M5, Server Persistence. The web app provides
+The repository has completed V0.1 M6, Sync. The web app provides
 quick capture, daily plans, the execution board, project focus, Daily Close,
-and Basic Review. The server now provides PostgreSQL persistence, Flyway,
-closed single-user authentication, core domain APIs, Bootstrap, stable error
-codes, and an OpenAPI contract. Product and development documentation is
-available in `docs/`.
+and Basic Review. Its IndexedDB Outbox is connected to Spring Boot/PostgreSQL
+with idempotent push, incremental pull, offline retry, and explicit conflict
+resolution. Product and development documentation is available in `docs/`.
 
 ## Local Requirements
 
@@ -53,8 +52,8 @@ For environment variable examples, see `deploy/compose/.env.example` and
 
 - The web engineering baseline, local task kernel, Today page, execution board,
   project focus workflow, Daily Close, and Basic Review are implemented.
-- M5 adds PostgreSQL server persistence. Connecting browser IndexedDB Outbox
-  records to the server remains part of M6.
+- M6 connects browser IndexedDB Outbox records to the server and adds sync
+  status and conflict resolution at `/settings/sync`.
 - Android, standard OIDC authentication, and Oracle deployment are planned for
   later milestones.
 - The system does not depend on Supabase, Redis, message queues, or paid SaaS
