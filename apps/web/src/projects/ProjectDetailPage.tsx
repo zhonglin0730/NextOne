@@ -1,0 +1,394 @@
+import type { ProjectDetail } from "@nextone/application";
+import type { Task, TaskStatus } from "@nextone/domain";
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { useTranslation } from "react-i18next";
+import { Link, useParams } from "react-router";
+
+import { transitionWithWipConfirmation } from "../tasks/taskActions";
+import { TaskDrawer } from "../tasks/TaskDrawer";
+import {
+  notifyTasksChanged,
+  projectApplicationService,
+  taskApplicationService,
+  tasksChangedEvent,
+} from "../tasks/taskService";
+import { getLocalDate, getTimeZone, getWeekStartsAt } from "../today/date";
+
+interface ProjectTaskRowProps {
+  task: Task;
+  focusAction?: boolean;
+  onOpen: (task: Task) => void;
+  onSetFocus: (task: Task) => void;
+}
+
+function ProjectTaskRow({ task, focusAction = false, onOpen, onSetFocus }: ProjectTaskRowProps) {
+  const { t } = useTranslation();
+
+  return (
+    <div className="project-task-row">
+      <button onClick={() => onOpen(task)} type="button">
+        <strong>{task.title}</strong>
+        <span>{t(`status.${task.status}`)}</span>
+      </button>
+      {focusAction ? (
+        <button className="button button-outline button-small" onClick={() => onSetFocus(task)}>
+          {t("project.setFocus")}
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+export function ProjectDetailPage() {
+  const { i18n, t } = useTranslation();
+  const { projectId } = useParams();
+  const weekStartsAt = useMemo(() => getWeekStartsAt(), []);
+  const [detail, setDetail] = useState<ProjectDetail | undefined>();
+  const [selectedTask, setSelectedTask] = useState<Task | undefined>();
+  const [candidateTitle, setCandidateTitle] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+
+  const load = useCallback(async () => {
+    if (projectId === undefined) {
+      return;
+    }
+
+    try {
+      setDetail(await projectApplicationService.getDetail(projectId, weekStartsAt));
+      setError("");
+    } catch {
+      setError(t("common.error"));
+    } finally {
+      setLoading(false);
+    }
+  }, [projectId, t, weekStartsAt]);
+
+  useEffect(() => {
+    void load();
+    window.addEventListener(tasksChangedEvent, load);
+    return () => window.removeEventListener(tasksChangedEvent, load);
+  }, [load]);
+
+  const setFocus = async (task: Task) => {
+    if (projectId === undefined) {
+      return;
+    }
+
+    try {
+      await projectApplicationService.setFocusTask(projectId, task.id);
+      notifyTasksChanged();
+      await load();
+    } catch {
+      setError(t("common.error"));
+    }
+  };
+
+  const transition = async (task: Task, status: TaskStatus) => {
+    try {
+      await transitionWithWipConfirmation(task.id, status, (limit) =>
+        window.confirm(`${t("wip.title", { limit })}\n\n${t("wip.confirm")}`),
+      );
+      await load();
+    } catch {
+      setError(t("common.error"));
+    }
+  };
+
+  const addFocusToday = async (task: Task) => {
+    try {
+      await taskApplicationService.addToToday(task.id, getLocalDate(), getTimeZone());
+      notifyTasksChanged();
+      await load();
+    } catch {
+      setError(t("common.error"));
+    }
+  };
+
+  const addCandidate = async (event: FormEvent) => {
+    event.preventDefault();
+    if (projectId === undefined || candidateTitle.trim().length === 0 || submitting) {
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const task = await taskApplicationService.capture({
+        title: candidateTitle,
+        projectId,
+      });
+      await taskApplicationService.transition(task.id, "READY");
+      setCandidateTitle("");
+      notifyTasksChanged();
+      await load();
+    } catch {
+      setError(t("common.error"));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const formatter = new Intl.DateTimeFormat(i18n.resolvedLanguage ?? "zh-CN", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
+
+  if (loading) {
+    return (
+      <section className="page">
+        <div className="task-list-skeleton" />
+      </section>
+    );
+  }
+
+  if (detail === undefined) {
+    return (
+      <section className="page empty-state">
+        <h1>{t("project.notFound")}</h1>
+        <Link className="button button-outline" to="/projects">
+          {t("project.back")}
+        </Link>
+      </section>
+    );
+  }
+
+  const { overview } = detail;
+  const recommended = overview.focusTask === undefined ? detail.nextCandidates[0] : undefined;
+
+  return (
+    <section className="page project-detail-page" aria-labelledby="project-detail-title">
+      <Link className="project-back-link" to="/projects">
+        ← {t("project.back")}
+      </Link>
+
+      <header className="project-detail-header">
+        <div>
+          <p className="eyebrow">{t("project.eyebrow")}</p>
+          <h1 id="project-detail-title">{overview.project.name}</h1>
+          {overview.project.note === undefined ? null : <p>{overview.project.note}</p>}
+        </div>
+        <span
+          className={`project-health ${
+            overview.needsFocusDecision ? "project-health-decision" : "project-health-active"
+          }`}
+        >
+          {overview.needsFocusDecision ? t("project.needsDecision") : t("project.active")}
+        </span>
+      </header>
+
+      {error.length > 0 ? <p className="page-error">{error}</p> : null}
+
+      <div className="project-detail-layout">
+        <div className="project-detail-main">
+          <section className="project-detail-section project-focus-section">
+            <header>
+              <div>
+                <p className="eyebrow">{t("project.currentFocus")}</p>
+                <h2>{t("project.focusTitle")}</h2>
+              </div>
+              {overview.focusTask === undefined ? (
+                <span className="project-health project-health-decision">
+                  {t("project.needsDecision")}
+                </span>
+              ) : null}
+            </header>
+
+            {overview.focusTask === undefined ? (
+              recommended === undefined ? (
+                <div className="project-focus-empty">
+                  <strong>{t("project.noFocus")}</strong>
+                  <p>{t("project.noCandidateDescription")}</p>
+                </div>
+              ) : (
+                <div className="project-recommendation">
+                  <span>{t("project.recommendedNext")}</span>
+                  <button onClick={() => setSelectedTask(recommended)} type="button">
+                    {recommended.title}
+                  </button>
+                  <button
+                    className="button button-primary button-small"
+                    onClick={() => void setFocus(recommended)}
+                    type="button"
+                  >
+                    {t("project.makeFocus")}
+                  </button>
+                </div>
+              )
+            ) : (
+              <div className="project-focus-active">
+                <button onClick={() => setSelectedTask(overview.focusTask)} type="button">
+                  <strong>{overview.focusTask.title}</strong>
+                  <span>{t(`status.${overview.focusTask.status}`)}</span>
+                </button>
+                <div className="card-actions">
+                  {overview.focusTask.status === "READY" ||
+                  overview.focusTask.status === "WAITING" ? (
+                    <button
+                      className="button button-primary button-small"
+                      onClick={() => void transition(overview.focusTask!, "DOING")}
+                      type="button"
+                    >
+                      {t("action.DOING")}
+                    </button>
+                  ) : null}
+                  <button
+                    className="button button-outline button-small"
+                    onClick={() => void addFocusToday(overview.focusTask!)}
+                    type="button"
+                  >
+                    {t("project.addToday")}
+                  </button>
+                </div>
+              </div>
+            )}
+          </section>
+
+          <section className="project-detail-section">
+            <header>
+              <div>
+                <p className="eyebrow">{t("project.candidateCount")}</p>
+                <h2>{t("project.nextCandidates")}</h2>
+              </div>
+              <span className="count-pill">{detail.nextCandidates.length}</span>
+            </header>
+
+            {detail.nextCandidates.length === 0 ? (
+              <p className="inline-empty">{t("project.noCandidates")}</p>
+            ) : (
+              <div className="project-task-list">
+                {detail.nextCandidates.map((task) => (
+                  <ProjectTaskRow
+                    focusAction={overview.focusTask?.id !== task.id}
+                    key={task.id}
+                    onOpen={setSelectedTask}
+                    onSetFocus={(candidate) => void setFocus(candidate)}
+                    task={task}
+                  />
+                ))}
+              </div>
+            )}
+
+            <form className="project-candidate-form" onSubmit={addCandidate}>
+              <input
+                onChange={(event) => setCandidateTitle(event.target.value)}
+                placeholder={t("project.candidatePlaceholder")}
+                value={candidateTitle}
+              />
+              <button
+                className="button button-outline"
+                disabled={candidateTitle.trim().length === 0 || submitting}
+                type="submit"
+              >
+                {t("project.addCandidate")}
+              </button>
+            </form>
+          </section>
+
+          {detail.doing.length > 0 ? (
+            <section className="project-detail-section">
+              <header>
+                <h2>{t("project.doing")}</h2>
+                <span className="count-pill">{detail.doing.length}</span>
+              </header>
+              <div className="project-task-list">
+                {detail.doing.map((task) => (
+                  <ProjectTaskRow
+                    key={task.id}
+                    onOpen={setSelectedTask}
+                    onSetFocus={(candidate) => void setFocus(candidate)}
+                    task={task}
+                  />
+                ))}
+              </div>
+            </section>
+          ) : null}
+
+          {detail.waiting.length > 0 ? (
+            <section className="project-detail-section">
+              <header>
+                <h2>{t("project.waiting")}</h2>
+                <span className="count-pill">{detail.waiting.length}</span>
+              </header>
+              <div className="project-task-list">
+                {detail.waiting.map((task) => (
+                  <ProjectTaskRow
+                    focusAction={overview.focusTask?.id !== task.id}
+                    key={task.id}
+                    onOpen={setSelectedTask}
+                    onSetFocus={(candidate) => void setFocus(candidate)}
+                    task={task}
+                  />
+                ))}
+              </div>
+            </section>
+          ) : null}
+        </div>
+
+        <aside className="project-detail-aside">
+          <section className="project-summary-card">
+            <h2>{t("project.summary")}</h2>
+            <dl className="project-summary-list">
+              <div>
+                <dt>{t("project.completedThisWeek")}</dt>
+                <dd>{overview.completedThisWeek}</dd>
+              </div>
+              <div>
+                <dt>{t("project.waitingCount")}</dt>
+                <dd>{overview.waitingCount}</dd>
+              </div>
+              <div>
+                <dt>{t("project.candidateCount")}</dt>
+                <dd>{overview.nextCandidateCount}</dd>
+              </div>
+            </dl>
+          </section>
+
+          <section className="project-summary-card">
+            <h2>{t("project.recentActivity")}</h2>
+            {detail.recentActivity.length === 0 ? (
+              <p className="muted">{t("project.noProgress")}</p>
+            ) : (
+              <ol className="project-activity-list">
+                {detail.recentActivity.map(({ event, task }) => (
+                  <li key={event.id}>
+                    <span className="activity-dot" aria-hidden="true" />
+                    <div>
+                      <strong>{task.title}</strong>
+                      <span>{t(`event.${event.type}`)}</span>
+                      <time dateTime={event.occurredAt}>
+                        {formatter.format(new Date(event.occurredAt))}
+                      </time>
+                    </div>
+                  </li>
+                ))}
+              </ol>
+            )}
+          </section>
+
+          {detail.recentlyCompleted.length > 0 ? (
+            <section className="project-summary-card">
+              <h2>{t("project.recentlyCompleted")}</h2>
+              <ul className="project-completed-list">
+                {detail.recentlyCompleted.map((task) => (
+                  <li key={task.id}>✓ {task.title}</li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
+        </aside>
+      </div>
+
+      {selectedTask === undefined ? null : (
+        <TaskDrawer
+          onClose={() => setSelectedTask(undefined)}
+          onTaskChanged={(task) => {
+            setSelectedTask(task);
+            void load();
+          }}
+          task={selectedTask}
+        />
+      )}
+    </section>
+  );
+}

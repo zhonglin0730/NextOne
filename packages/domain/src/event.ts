@@ -15,6 +15,9 @@ export const taskEventTypes = [
   "CANCELED",
   "REOPENED",
   "WIP_LIMIT_OVERRIDDEN",
+  "PROJECT_CHANGED",
+  "PROJECT_FOCUS_SET",
+  "PROJECT_FOCUS_CLEARED",
 ] as const;
 
 export type TaskEventType = (typeof taskEventTypes)[number];
@@ -24,6 +27,8 @@ export interface TaskEventMetadata {
   toStatus?: TaskStatus;
   fromVisibility?: TaskVisibility;
   toVisibility?: TaskVisibility;
+  fromProjectId?: string;
+  toProjectId?: string;
   fieldNames?: readonly string[];
 }
 

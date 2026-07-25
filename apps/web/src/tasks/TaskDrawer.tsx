@@ -1,6 +1,7 @@
 import {
   allowedTaskTransitions,
   type EnergyLevel,
+  type Project,
   type Task,
   type TaskEvent,
   type TaskStatus,
@@ -9,7 +10,12 @@ import { useEffect, useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 
 import { getLocalDate, getTimeZone } from "../today/date";
-import { notifyTasksChanged, taskApplicationService } from "./taskService";
+import { transitionWithWipConfirmation } from "./taskActions";
+import {
+  notifyTasksChanged,
+  projectApplicationService,
+  taskApplicationService,
+} from "./taskService";
 
 interface TaskDrawerProps {
   task: Task;
@@ -21,12 +27,14 @@ export function TaskDrawer({ task, onClose, onTaskChanged }: TaskDrawerProps) {
   const { i18n, t } = useTranslation();
   const [title, setTitle] = useState(task.title);
   const [note, setNote] = useState(task.note ?? "");
+  const [projectId, setProjectId] = useState(task.projectId ?? "");
   const [deadlineAt, setDeadlineAt] = useState(task.deadlineAt ?? "");
   const [reviewAt, setReviewAt] = useState(task.reviewAt ?? "");
   const [estimateMinutes, setEstimateMinutes] = useState(task.estimateMinutes?.toString() ?? "");
   const [energyLevel, setEnergyLevel] = useState<EnergyLevel | "">(task.energyLevel ?? "");
   const [waitingFor, setWaitingFor] = useState(task.waitingFor ?? "");
   const [events, setEvents] = useState<readonly TaskEvent[]>([]);
+  const [projects, setProjects] = useState<readonly Project[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
 
@@ -37,12 +45,14 @@ export function TaskDrawer({ task, onClose, onTaskChanged }: TaskDrawerProps) {
   useEffect(() => {
     setTitle(task.title);
     setNote(task.note ?? "");
+    setProjectId(task.projectId ?? "");
     setDeadlineAt(task.deadlineAt ?? "");
     setReviewAt(task.reviewAt ?? "");
     setEstimateMinutes(task.estimateMinutes?.toString() ?? "");
     setEnergyLevel(task.energyLevel ?? "");
     setWaitingFor(task.waitingFor ?? "");
     void loadEvents();
+    void projectApplicationService.listProjects("ACTIVE").then(setProjects);
   }, [task]);
 
   const save = async (event: FormEvent) => {
@@ -54,6 +64,7 @@ export function TaskDrawer({ task, onClose, onTaskChanged }: TaskDrawerProps) {
       const updated = await taskApplicationService.updateDetails(task.id, {
         title,
         note: note.trim().length === 0 ? null : note,
+        projectId: projectId.length === 0 ? null : projectId,
         deadlineAt: deadlineAt.length === 0 ? null : deadlineAt,
         reviewAt: reviewAt.length === 0 ? null : reviewAt,
         estimateMinutes: estimateMinutes.length === 0 ? null : Number.parseInt(estimateMinutes, 10),
@@ -79,9 +90,13 @@ export function TaskDrawer({ task, onClose, onTaskChanged }: TaskDrawerProps) {
     setError("");
 
     try {
-      const updated = await taskApplicationService.transition(task.id, status);
+      const updated = await transitionWithWipConfirmation(task.id, status, (limit) =>
+        window.confirm(`${t("wip.title", { limit })}\n\n${t("wip.confirm")}`),
+      );
+      if (updated === undefined) {
+        return;
+      }
       onTaskChanged(updated);
-      notifyTasksChanged();
       await loadEvents();
     } catch {
       setError(t("common.error"));
@@ -172,6 +187,17 @@ export function TaskDrawer({ task, onClose, onTaskChanged }: TaskDrawerProps) {
           <label className="form-field details-span">
             <span>{t("task.note")}</span>
             <textarea onChange={(event) => setNote(event.target.value)} rows={4} value={note} />
+          </label>
+          <label className="form-field details-span">
+            <span>{t("task.project")}</span>
+            <select onChange={(event) => setProjectId(event.target.value)} value={projectId}>
+              <option value="">{t("project.noProject")}</option>
+              {projects.map((project) => (
+                <option key={project.id} value={project.id}>
+                  {project.name}
+                </option>
+              ))}
+            </select>
           </label>
           <label className="form-field">
             <span>{t("task.deadline")}</span>

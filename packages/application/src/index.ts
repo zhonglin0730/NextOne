@@ -6,6 +6,8 @@ import {
   type DailyPlanItem,
   type DailyPlanSection,
   type EnergyLevel,
+  type Project,
+  type ProjectStatus,
   type Task,
   type TaskEvent,
   type TaskStatus,
@@ -27,6 +29,7 @@ export interface CaptureTaskInput {
 export interface UpdateTaskDetailsInput {
   title: string;
   note: string | null;
+  projectId: string | null;
   deadlineAt: string | null;
   reviewAt: string | null;
   estimateMinutes: number | null;
@@ -58,6 +61,37 @@ export interface TodayView {
   focus: readonly TodayTask[];
   later: readonly TodayTask[];
   doing: readonly Task[];
+}
+
+export interface CreateProjectInput {
+  name: string;
+  note?: string;
+  areaId?: string;
+}
+
+export interface ProjectOverview {
+  project: Project;
+  focusTask: Task | undefined;
+  waitingCount: number;
+  nextCandidateCount: number;
+  completedThisWeek: number;
+  lastProgressAt: string | undefined;
+  needsFocusDecision: boolean;
+}
+
+export interface ProjectActivity {
+  event: TaskEvent;
+  task: Task;
+}
+
+export interface ProjectDetail {
+  overview: ProjectOverview;
+  nextCandidates: readonly Task[];
+  doing: readonly Task[];
+  waiting: readonly Task[];
+  someday: readonly Task[];
+  recentlyCompleted: readonly Task[];
+  recentActivity: readonly ProjectActivity[];
 }
 
 export class WipLimitExceededError extends Error {
@@ -123,6 +157,7 @@ async function persistTaskMutation(
 function compactTaskDetails(task: Task, input: UpdateTaskDetailsInput, now: string): Task {
   const {
     note: _note,
+    projectId: _projectId,
     deadlineAt: _deadlineAt,
     reviewAt: _reviewAt,
     estimateMinutes: _estimateMinutes,
@@ -142,6 +177,7 @@ function compactTaskDetails(task: Task, input: UpdateTaskDetailsInput, now: stri
     updatedAt: now,
     revision: task.revision + 1,
     ...(input.note === null || input.note.trim().length === 0 ? {} : { note: input.note.trim() }),
+    ...(input.projectId === null ? {} : { projectId: input.projectId }),
     ...(input.deadlineAt === null ? {} : { deadlineAt: input.deadlineAt }),
     ...(input.reviewAt === null ? {} : { reviewAt: input.reviewAt }),
     ...(input.estimateMinutes === null ? {} : { estimateMinutes: input.estimateMinutes }),
@@ -150,6 +186,36 @@ function compactTaskDetails(task: Task, input: UpdateTaskDetailsInput, now: stri
       ? {}
       : { waitingFor: input.waitingFor.trim() }),
   };
+}
+
+function withoutProjectFocus(project: Project, occurredAt: string): Project {
+  const { focusTaskId: _focusTaskId, ...projectWithoutFocus } = project;
+  return {
+    ...projectWithoutFocus,
+    updatedAt: occurredAt,
+    revision: project.revision + 1,
+  };
+}
+
+async function persistProjectMutation(
+  transaction: StorageTransaction,
+  project: Project,
+  occurredAt: string,
+  generateId: () => string,
+): Promise<void> {
+  await transaction.projects.save(project);
+  await transaction.outbox.append(
+    createOutboxMutation(
+      {
+        userId: project.userId,
+        entityType: "PROJECT",
+        entityId: project.id,
+        payload: project,
+      },
+      occurredAt,
+      generateId,
+    ),
+  );
 }
 
 export class TaskApplicationService {
@@ -223,6 +289,18 @@ export class TaskApplicationService {
       }
 
       const occurredAt = this.dependencies.now();
+
+      if (input.projectId !== null && input.projectId !== current.projectId) {
+        const project = await transaction.projects.findById(input.projectId);
+        if (
+          project === undefined ||
+          project.userId !== current.userId ||
+          project.status !== "ACTIVE"
+        ) {
+          throw new Error("Active project not found");
+        }
+      }
+
       const task = compactTaskDetails(current, input, occurredAt);
       const changedFields = Object.keys(input).filter((key) => {
         const field = key as keyof UpdateTaskDetailsInput;
@@ -233,7 +311,9 @@ export class TaskApplicationService {
           ? "DEADLINE_CHANGED"
           : changedFields.length === 1 && changedFields[0] === "reviewAt"
             ? "REVIEW_AT_CHANGED"
-            : undefined;
+            : changedFields.length === 1 && changedFields[0] === "projectId"
+              ? "PROJECT_CHANGED"
+              : undefined;
       const event: TaskEvent | undefined =
         eventType === undefined
           ? undefined
@@ -243,13 +323,60 @@ export class TaskApplicationService {
               taskId: task.id,
               type: eventType,
               occurredAt,
-              metadata: { fieldNames: changedFields },
+              metadata:
+                eventType === "PROJECT_CHANGED"
+                  ? {
+                      ...(current.projectId === undefined
+                        ? {}
+                        : { fromProjectId: current.projectId }),
+                      ...(input.projectId === null ? {} : { toProjectId: input.projectId }),
+                      fieldNames: changedFields,
+                    }
+                  : { fieldNames: changedFields },
             };
+
+      const events: TaskEvent[] = event === undefined ? [] : [event];
+
+      if ((current.projectId ?? null) !== input.projectId && eventType !== "PROJECT_CHANGED") {
+        events.push({
+          id: this.dependencies.generateId(),
+          userId: task.userId,
+          taskId: task.id,
+          type: "PROJECT_CHANGED",
+          occurredAt,
+          metadata: {
+            ...(current.projectId === undefined ? {} : { fromProjectId: current.projectId }),
+            ...(input.projectId === null ? {} : { toProjectId: input.projectId }),
+            fieldNames: ["projectId"],
+          },
+        });
+      }
+
+      if ((current.projectId ?? null) !== input.projectId && current.projectId !== undefined) {
+        const previousProject = await transaction.projects.findById(current.projectId);
+        if (previousProject?.focusTaskId === current.id) {
+          const updatedProject = withoutProjectFocus(previousProject, occurredAt);
+          await persistProjectMutation(
+            transaction,
+            updatedProject,
+            occurredAt,
+            this.dependencies.generateId,
+          );
+          events.push({
+            id: this.dependencies.generateId(),
+            userId: task.userId,
+            taskId: task.id,
+            type: "PROJECT_FOCUS_CLEARED",
+            occurredAt,
+            metadata: {},
+          });
+        }
+      }
 
       await persistTaskMutation(
         transaction,
         task,
-        event === undefined ? [] : [event],
+        events,
         occurredAt,
         this.dependencies.generateId,
       );
@@ -312,13 +439,40 @@ export class TaskApplicationService {
         },
       };
 
+      const events = wipOverrideEvent === undefined ? [event] : [wipOverrideEvent, event];
+      let projectWithoutFocus: Project | undefined;
+
+      if ((to === "COMPLETED" || to === "CANCELED") && current.projectId !== undefined) {
+        const project = await transaction.projects.findById(current.projectId);
+        if (project?.focusTaskId === current.id) {
+          projectWithoutFocus = withoutProjectFocus(project, occurredAt);
+          events.push({
+            id: this.dependencies.generateId(),
+            userId: task.userId,
+            taskId: task.id,
+            type: "PROJECT_FOCUS_CLEARED",
+            occurredAt,
+            metadata: {},
+          });
+        }
+      }
+
       await persistTaskMutation(
         transaction,
         task,
-        wipOverrideEvent === undefined ? [event] : [wipOverrideEvent, event],
+        events,
         occurredAt,
         this.dependencies.generateId,
       );
+
+      if (projectWithoutFocus !== undefined) {
+        await persistProjectMutation(
+          transaction,
+          projectWithoutFocus,
+          occurredAt,
+          this.dependencies.generateId,
+        );
+      }
       return task;
     });
   }
@@ -546,6 +700,233 @@ export class TaskApplicationService {
         later: todayTasks.filter(({ item }) => item.section === "LATER"),
         doing,
       };
+    });
+  }
+}
+
+const projectProgressEventTypes = new Set<TaskEvent["type"]>([
+  "CLARIFIED",
+  "STATUS_CHANGED",
+  "WAITING_STARTED",
+  "WAITING_ENDED",
+  "COMPLETED",
+  "REOPENED",
+  "PROJECT_FOCUS_SET",
+  "PROJECT_FOCUS_CLEARED",
+]);
+
+function isOpenTask(task: Task): boolean {
+  return task.status !== "COMPLETED" && task.status !== "CANCELED";
+}
+
+function candidateTasks(tasks: readonly Task[], focusTaskId?: string): readonly Task[] {
+  return tasks.filter(
+    (task) => task.status === "READY" && task.visibility !== "SOMEDAY" && task.id !== focusTaskId,
+  );
+}
+
+function completedSince(tasks: readonly Task[], weekStartsAt: string): readonly Task[] {
+  return tasks
+    .filter(
+      (task) =>
+        task.status === "COMPLETED" &&
+        task.completedAt !== undefined &&
+        task.completedAt >= weekStartsAt,
+    )
+    .sort((left, right) => (right.completedAt ?? "").localeCompare(left.completedAt ?? ""));
+}
+
+async function projectActivity(
+  transaction: StorageTransaction,
+  tasks: readonly Task[],
+): Promise<readonly ProjectActivity[]> {
+  const activity: ProjectActivity[] = [];
+
+  for (const task of tasks) {
+    const events = await transaction.taskEvents.listByTaskId(task.id);
+    for (const event of events) {
+      if (projectProgressEventTypes.has(event.type)) {
+        activity.push({ event, task });
+      }
+    }
+  }
+
+  return activity.sort((left, right) =>
+    right.event.occurredAt.localeCompare(left.event.occurredAt),
+  );
+}
+
+function createProjectOverview(
+  project: Project,
+  tasks: readonly Task[],
+  activity: readonly ProjectActivity[],
+  weekStartsAt: string,
+): ProjectOverview {
+  const focusTask = tasks.find((task) => task.id === project.focusTaskId && isOpenTask(task));
+
+  return {
+    project,
+    focusTask,
+    waitingCount: tasks.filter((task) => task.status === "WAITING").length,
+    nextCandidateCount: candidateTasks(tasks, focusTask?.id).length,
+    completedThisWeek: completedSince(tasks, weekStartsAt).length,
+    lastProgressAt: activity[0]?.event.occurredAt,
+    needsFocusDecision: project.status === "ACTIVE" && focusTask === undefined,
+  };
+}
+
+export class ProjectApplicationService {
+  constructor(private readonly dependencies: TaskApplicationDependencies) {}
+
+  async create(input: CreateProjectInput): Promise<Project> {
+    const name = input.name.trim();
+    if (name.length === 0) {
+      throw new Error("Project name is required");
+    }
+
+    const occurredAt = this.dependencies.now();
+    const project: Project = {
+      id: this.dependencies.generateId(),
+      userId: this.dependencies.userId,
+      name,
+      status: "ACTIVE",
+      sortKey: occurredAt,
+      createdAt: occurredAt,
+      updatedAt: occurredAt,
+      revision: 1,
+      ...(input.note === undefined || input.note.trim().length === 0
+        ? {}
+        : { note: input.note.trim() }),
+      ...(input.areaId === undefined ? {} : { areaId: input.areaId }),
+    };
+
+    await this.dependencies.database.transaction((transaction) =>
+      persistProjectMutation(transaction, project, occurredAt, this.dependencies.generateId),
+    );
+    return project;
+  }
+
+  async listProjects(status?: ProjectStatus): Promise<readonly Project[]> {
+    return this.dependencies.database.transaction((transaction) =>
+      transaction.projects.list(status === undefined ? undefined : { status }),
+    );
+  }
+
+  async listOverview(weekStartsAt: string): Promise<readonly ProjectOverview[]> {
+    return this.dependencies.database.transaction(async (transaction) => {
+      const projects = await transaction.projects.list({ status: "ACTIVE" });
+      const overview: ProjectOverview[] = [];
+
+      for (const project of projects) {
+        const tasks = await transaction.tasks.list({
+          projectId: project.id,
+          includeCanceled: true,
+        });
+        const activity = await projectActivity(transaction, tasks);
+        overview.push(createProjectOverview(project, tasks, activity, weekStartsAt));
+      }
+
+      return overview;
+    });
+  }
+
+  async getDetail(projectId: string, weekStartsAt: string): Promise<ProjectDetail | undefined> {
+    return this.dependencies.database.transaction(async (transaction) => {
+      const project = await transaction.projects.findById(projectId);
+      if (project === undefined || project.userId !== this.dependencies.userId) {
+        return undefined;
+      }
+
+      const tasks = await transaction.tasks.list({ projectId, includeCanceled: true });
+      const activity = await projectActivity(transaction, tasks);
+      const overview = createProjectOverview(project, tasks, activity, weekStartsAt);
+
+      return {
+        overview,
+        nextCandidates: candidateTasks(tasks, overview.focusTask?.id),
+        doing: tasks.filter(
+          (task) =>
+            task.status === "DOING" &&
+            task.visibility !== "SOMEDAY" &&
+            task.id !== overview.focusTask?.id,
+        ),
+        waiting: tasks.filter((task) => task.status === "WAITING"),
+        someday: tasks.filter((task) => isOpenTask(task) && task.visibility === "SOMEDAY"),
+        recentlyCompleted: completedSince(tasks, weekStartsAt),
+        recentActivity: activity.slice(0, 8),
+      };
+    });
+  }
+
+  async setFocusTask(projectId: string, taskId: string | null): Promise<Project> {
+    return this.dependencies.database.transaction(async (transaction) => {
+      const project = await transaction.projects.findById(projectId);
+      if (
+        project === undefined ||
+        project.userId !== this.dependencies.userId ||
+        project.status !== "ACTIVE"
+      ) {
+        throw new Error("Active project not found");
+      }
+
+      let nextFocus: Task | undefined;
+      if (taskId !== null) {
+        nextFocus = await transaction.tasks.findById(taskId);
+        if (
+          nextFocus === undefined ||
+          nextFocus.projectId !== project.id ||
+          !isOpenTask(nextFocus) ||
+          nextFocus.status === "INBOX"
+        ) {
+          throw new Error("Focus task must be an actionable task in this project");
+        }
+      }
+
+      if (
+        project.focusTaskId === taskId ||
+        (project.focusTaskId === undefined && taskId === null)
+      ) {
+        return project;
+      }
+
+      const occurredAt = this.dependencies.now();
+      const baseProject = withoutProjectFocus(project, occurredAt);
+      const updatedProject: Project =
+        taskId === null ? baseProject : { ...baseProject, focusTaskId: taskId };
+
+      await persistProjectMutation(
+        transaction,
+        updatedProject,
+        occurredAt,
+        this.dependencies.generateId,
+      );
+
+      if (project.focusTaskId !== undefined) {
+        const previousTask = await transaction.tasks.findById(project.focusTaskId);
+        if (previousTask !== undefined) {
+          await transaction.taskEvents.append({
+            id: this.dependencies.generateId(),
+            userId: previousTask.userId,
+            taskId: previousTask.id,
+            type: "PROJECT_FOCUS_CLEARED",
+            occurredAt,
+            metadata: {},
+          });
+        }
+      }
+
+      if (nextFocus !== undefined) {
+        await transaction.taskEvents.append({
+          id: this.dependencies.generateId(),
+          userId: nextFocus.userId,
+          taskId: nextFocus.id,
+          type: "PROJECT_FOCUS_SET",
+          occurredAt,
+          metadata: {},
+        });
+      }
+
+      return updatedProject;
     });
   }
 }

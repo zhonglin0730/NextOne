@@ -1,4 +1,4 @@
-import type { DailyPlan, DailyPlanItem, Task, TaskEvent } from "@nextone/domain";
+import type { DailyPlan, DailyPlanItem, Project, Task, TaskEvent } from "@nextone/domain";
 import type {
   AreaRepository,
   DailyPlanItemRepository,
@@ -14,7 +14,7 @@ import type {
 } from "@nextone/storage-contracts";
 import { describe, expect, it } from "vitest";
 
-import { TaskApplicationService, WipLimitExceededError } from "../src";
+import { ProjectApplicationService, TaskApplicationService, WipLimitExceededError } from "../src";
 
 class MemoryTaskRepository implements TaskRepository {
   constructor(private readonly tasks: Map<string, Task>) {}
@@ -85,6 +85,26 @@ class MemoryEventRepository implements TaskEventRepository {
   }
 }
 
+class MemoryProjectRepository implements ProjectRepository {
+  constructor(private readonly projects: Map<string, Project>) {}
+
+  async findById(id: string): Promise<Project | undefined> {
+    return this.projects.get(id);
+  }
+
+  async list(query?: Parameters<ProjectRepository["list"]>[0]): Promise<readonly Project[]> {
+    return [...this.projects.values()].filter(
+      (project) =>
+        (query?.areaId === undefined || project.areaId === query.areaId) &&
+        (query?.status === undefined || project.status === query.status),
+    );
+  }
+
+  async save(project: Project): Promise<void> {
+    this.projects.set(project.id, project);
+  }
+}
+
 class MemoryOutboxRepository implements OutboxRepository {
   constructor(private readonly mutations: OutboxMutation[]) {}
 
@@ -110,12 +130,12 @@ function createMemoryDatabase() {
   const outbox: OutboxMutation[] = [];
   const plans = new Map<string, DailyPlan>();
   const planItems = new Map<string, DailyPlanItem>();
+  const projects = new Map<string, Project>();
   const unsupportedAreaRepository = {} as AreaRepository;
-  const unsupportedProjectRepository = {} as ProjectRepository;
   const transaction: StorageTransaction = {
     tasks: new MemoryTaskRepository(tasks),
     areas: unsupportedAreaRepository,
-    projects: unsupportedProjectRepository,
+    projects: new MemoryProjectRepository(projects),
     taskEvents: new MemoryEventRepository(events),
     dailyPlans: new MemoryDailyPlanRepository(plans),
     dailyPlanItems: new MemoryDailyPlanItemRepository(planItems),
@@ -125,7 +145,7 @@ function createMemoryDatabase() {
     transaction: async <T>(work: (value: StorageTransaction) => Promise<T>) => work(transaction),
   };
 
-  return { database, tasks, events, outbox, plans, planItems };
+  return { database, tasks, events, outbox, plans, planItems, projects };
 }
 
 function createService(database: LocalDatabase) {
@@ -137,6 +157,18 @@ function createService(database: LocalDatabase) {
     userId: "local-user",
     generateId: () => `id-${++id}`,
     now: () => `2026-07-24T10:${String(minute++).padStart(2, "0")}:00.000Z`,
+  });
+}
+
+function createProjectService(database: LocalDatabase) {
+  let id = 100;
+  let minute = 30;
+
+  return new ProjectApplicationService({
+    database,
+    userId: "local-user",
+    generateId: () => `project-id-${++id}`,
+    now: () => `2026-07-24T11:${String(minute++).padStart(2, "0")}:00.000Z`,
   });
 }
 
@@ -265,5 +297,55 @@ describe("task application service", () => {
 
     expect(tomorrow.focus).toHaveLength(0);
     expect(tomorrow.later).toHaveLength(0);
+  });
+
+  it("only allows a project task to become that project's focus", async () => {
+    const state = createMemoryDatabase();
+    const tasks = createService(state.database);
+    const projects = createProjectService(state.database);
+    const project = await projects.create({ name: "NextOne 产品开发" });
+    const otherProject = await projects.create({ name: "另一个项目" });
+    const task = await tasks.capture({ title: "实现项目页", projectId: otherProject.id });
+    await tasks.transition(task.id, "READY");
+
+    await expect(projects.setFocusTask(project.id, task.id)).rejects.toThrow(
+      "Focus task must be an actionable task in this project",
+    );
+    expect(state.projects.get(project.id)?.focusTaskId).toBeUndefined();
+  });
+
+  it("clears a completed focus and recommends only the next ready task", async () => {
+    const state = createMemoryDatabase();
+    const tasks = createService(state.database);
+    const projects = createProjectService(state.database);
+    const project = await projects.create({ name: "NextOne 产品开发" });
+    const focus = await tasks.capture({ title: "完成 M3", projectId: project.id });
+    const next = await tasks.capture({ title: "准备 M4", projectId: project.id });
+    const waiting = await tasks.capture({ title: "等待反馈", projectId: project.id });
+    await tasks.transition(focus.id, "READY");
+    await tasks.transition(next.id, "READY");
+    await tasks.transition(waiting.id, "WAITING");
+    await projects.setFocusTask(project.id, focus.id);
+
+    await tasks.transition(focus.id, "COMPLETED");
+    const detail = await projects.getDetail(project.id, "2026-07-20T00:00:00.000Z");
+
+    expect(state.projects.get(project.id)?.focusTaskId).toBeUndefined();
+    expect(detail?.overview.needsFocusDecision).toBe(true);
+    expect(detail?.nextCandidates.map((task) => task.id)).toEqual([next.id]);
+    expect(detail?.waiting.map((task) => task.id)).toEqual([waiting.id]);
+    expect(state.events.map((event) => event.type)).toContain("PROJECT_FOCUS_CLEARED");
+  });
+
+  it("places active projects without a focus into the decision queue", async () => {
+    const state = createMemoryDatabase();
+    const projects = createProjectService(state.database);
+    const project = await projects.create({ name: "需要确定下一步" });
+
+    const overview = await projects.listOverview("2026-07-20T00:00:00.000Z");
+
+    expect(overview).toHaveLength(1);
+    expect(overview[0]?.project.id).toBe(project.id);
+    expect(overview[0]?.needsFocusDecision).toBe(true);
   });
 });

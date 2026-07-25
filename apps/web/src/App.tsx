@@ -4,6 +4,8 @@ import { useTranslation } from "react-i18next";
 import { BrowserRouter, Navigate, NavLink, Route, Routes } from "react-router";
 
 import { BoardPage } from "./board/BoardPage";
+import { ProjectDetailPage } from "./projects/ProjectDetailPage";
+import { ProjectsPage } from "./projects/ProjectsPage";
 import { CaptureDialog } from "./tasks/CaptureDialog";
 import { InboxPage } from "./tasks/InboxPage";
 import { TodayPage } from "./today/TodayPage";
@@ -94,8 +96,10 @@ function AppShell() {
           <Route element={<InboxPage onOpenCapture={() => setCaptureOpen(true)} />} path="/inbox" />
           <Route element={<TodayPage />} path="/today" />
           <Route element={<BoardPage />} path="/board" />
+          <Route element={<ProjectsPage />} path="/projects" />
+          <Route element={<ProjectDetailPage />} path="/projects/:projectId" />
           {navigation
-            .filter((item) => !["today", "inbox", "board"].includes(item.key))
+            .filter((item) => !["today", "inbox", "board", "projects"].includes(item.key))
             .map((item) => (
               <Route
                 element={<PlaceholderPage pageKey={item.key} />}

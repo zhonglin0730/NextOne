@@ -8,3 +8,11 @@ export function getLocalDate(date = new Date()): string {
 export function getTimeZone(): string {
   return Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Shanghai";
 }
+
+export function getWeekStartsAt(now = new Date()): string {
+  const monday = new Date(now);
+  const daysSinceMonday = (monday.getDay() + 6) % 7;
+  monday.setDate(monday.getDate() - daysSinceMonday);
+  monday.setHours(0, 0, 0, 0);
+  return monday.toISOString();
+}

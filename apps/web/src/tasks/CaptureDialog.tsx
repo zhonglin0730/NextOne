@@ -1,8 +1,12 @@
-import type { EnergyLevel } from "@nextone/domain";
+import type { EnergyLevel, Project } from "@nextone/domain";
 import { useEffect, useState, type FormEvent, type KeyboardEvent } from "react";
 import { useTranslation } from "react-i18next";
 
-import { notifyTasksChanged, taskApplicationService } from "./taskService";
+import {
+  notifyTasksChanged,
+  projectApplicationService,
+  taskApplicationService,
+} from "./taskService";
 
 interface CaptureDialogProps {
   open: boolean;
@@ -13,10 +17,12 @@ export function CaptureDialog({ open, onClose }: CaptureDialogProps) {
   const { t } = useTranslation();
   const [title, setTitle] = useState("");
   const [note, setNote] = useState("");
+  const [projectId, setProjectId] = useState("");
   const [deadlineAt, setDeadlineAt] = useState("");
   const [reviewAt, setReviewAt] = useState("");
   const [estimateMinutes, setEstimateMinutes] = useState("");
   const [energyLevel, setEnergyLevel] = useState<EnergyLevel | "">("");
+  const [projects, setProjects] = useState<readonly Project[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
 
@@ -24,11 +30,13 @@ export function CaptureDialog({ open, onClose }: CaptureDialogProps) {
     if (open) {
       setTitle("");
       setNote("");
+      setProjectId("");
       setDeadlineAt("");
       setReviewAt("");
       setEstimateMinutes("");
       setEnergyLevel("");
       setError("");
+      void projectApplicationService.listProjects("ACTIVE").then(setProjects);
     }
   }, [open]);
 
@@ -48,6 +56,7 @@ export function CaptureDialog({ open, onClose }: CaptureDialogProps) {
       await taskApplicationService.capture({
         title,
         ...(note.trim().length === 0 ? {} : { note }),
+        ...(projectId.length === 0 ? {} : { projectId }),
         ...(deadlineAt.length === 0 ? {} : { deadlineAt }),
         ...(reviewAt.length === 0 ? {} : { reviewAt }),
         ...(estimateMinutes.length === 0
@@ -120,6 +129,17 @@ export function CaptureDialog({ open, onClose }: CaptureDialogProps) {
                   rows={3}
                   value={note}
                 />
+              </label>
+              <label className="form-field details-span">
+                <span>{t("task.project")}</span>
+                <select onChange={(event) => setProjectId(event.target.value)} value={projectId}>
+                  <option value="">{t("project.noProject")}</option>
+                  {projects.map((project) => (
+                    <option key={project.id} value={project.id}>
+                      {project.name}
+                    </option>
+                  ))}
+                </select>
               </label>
               <label className="form-field">
                 <span>{t("capture.deadline")}</span>
