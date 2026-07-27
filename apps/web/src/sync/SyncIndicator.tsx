@@ -20,18 +20,22 @@ export function SyncIndicator() {
 
   const status = summary?.state.status ?? "OFFLINE";
   const needsAttention = summary?.conflictCount ?? 0;
+  const pendingCount = summary?.pendingCount ?? 0;
+  const quiet = status === "UP_TO_DATE" && needsAttention === 0 && pendingCount === 0;
+  const label = `${t(`sync.status.${status}`)}${pendingCount > 0 ? ` · ${pendingCount}` : ""}`;
 
   return (
-    <div className="sync-indicator">
+    <div className={`sync-indicator${quiet ? " sync-indicator-quiet" : ""}`}>
       <button
+        aria-label={label}
         className={`sync-status sync-status-${status.toLowerCase()}`}
         disabled={status === "SYNCING"}
         onClick={() => void syncNow()}
+        title={label}
         type="button"
       >
         <span aria-hidden="true">●</span>
-        {t(`sync.status.${status}`)}
-        {(summary?.pendingCount ?? 0) > 0 && ` · ${summary?.pendingCount}`}
+        <span className="sync-status-label">{label}</span>
       </button>
       {needsAttention > 0 && (
         <Link className="sync-attention" to="/settings/sync">

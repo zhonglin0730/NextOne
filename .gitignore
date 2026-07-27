@@ -4,6 +4,7 @@
 Thumbs.db
 
 node_modules/
+.expo/
 .pnpm-store/
 dist/
 coverage/

@@ -4,13 +4,14 @@
 
 NextOne 是一个主动帮助用户做取舍的个人行动系统。
 
-当前仓库已完成 V0.1 M7 设置、数据安全与国际化：Web 端已具备完整行动闭环和离线同步，
-并提供区域与语言、任务规则、JSON 导入导出、导入预览、自动恢复点、清除本地副本和
-受保护的账户删除申请接口。产品和开发文档位于 `docs/`。
+当前仓库已完成 V0.1 M9 Daily Loop：除 Web 端完整行动闭环和离线同步外，现已提供
+Expo / React Native 原生客户端、SQLite 本地事务、快速记录、今天、收件箱、任务决策、
+机会性自动同步和 SecureStore 安全凭据；Web 端新增晨间规划、今日容量提示和 Zen
+单任务模式。产品和开发文档位于 `docs/`。
 
 ## 本机要求
 
-- Node.js 22.12 或更高版本
+- Node.js 22.13 或更高版本
 - pnpm 11
 - Java 17 或更高版本
 - Maven 3.6.3 或更高版本
@@ -25,6 +26,16 @@ pnpm test
 pnpm build
 pnpm dev
 ```
+
+启动 Android 开发服务：
+
+```bash
+pnpm mobile:dev
+```
+
+使用 Android 手机上的 Expo Go 扫描终端二维码，或在已配置 Android 模拟器时运行
+`pnpm mobile:android`。Android 模拟器访问本机 API 时使用 `http://10.0.2.2:8080`；
+真机需要在应用“设置”中填写局域网或公网可访问的服务端地址。
 
 启动本地数据库：
 
@@ -51,5 +62,7 @@ pnpm server:run
 - M6 已接通浏览器 IndexedDB Outbox 与服务端，并提供 `/settings/sync` 同步状态与冲突处理页；
 - M7 已提供 `/settings/general` 和 `/settings/data`，导入覆盖前会自动创建本地恢复点；
 - 清除本地副本不会删除云端数据，账户删除申请也不会在浏览器中直接执行最终删除；
-- Android、标准 OIDC 认证和 Oracle 部署将在后续里程碑实现；
+- M8 已提供不依赖 WebView 的 Android 原生界面、SQLite Outbox、前台/网络恢复同步和安全凭据；
+- M9 已提供晨间规划、每日容量反馈和 Zen 单任务模式；
+- 标准 OIDC 认证和 Oracle 部署将在后续 M10 实现；
 - 不依赖 Supabase、Redis、消息队列或付费 SaaS。

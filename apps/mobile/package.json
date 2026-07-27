@@ -1,0 +1,40 @@
+{
+  "name": "@nextone/mobile",
+  "version": "0.1.0",
+  "private": true,
+  "main": "index.ts",
+  "scripts": {
+    "start": "expo start",
+    "android": "expo start --android",
+    "check": "tsc --noEmit",
+    "test": "vitest run",
+    "build": "expo export --platform android --output-dir dist"
+  },
+  "dependencies": {
+    "@nextone/application": "workspace:*",
+    "@nextone/domain": "workspace:*",
+    "@nextone/i18n": "workspace:*",
+    "@nextone/storage-contracts": "workspace:*",
+    "@nextone/sync-core": "workspace:*",
+    "expo": "~57.0.0",
+    "expo-constants": "~57.0.7",
+    "expo-crypto": "~57.0.1",
+    "expo-linking": "~57.0.4",
+    "expo-network": "~57.0.1",
+    "expo-router": "~57.0.8",
+    "expo-secure-store": "~57.0.1",
+    "expo-sqlite": "~57.0.1",
+    "expo-status-bar": "~57.0.1",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "react-native": "0.86.0",
+    "react-native-safe-area-context": "~5.7.0",
+    "react-native-screens": "~4.26.2",
+    "react-native-worklets": "0.10.0"
+  },
+  "devDependencies": {
+    "@types/react": "~19.2.2",
+    "typescript": "~6.0.3",
+    "vitest": "catalog:"
+  }
+}

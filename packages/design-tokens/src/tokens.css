@@ -1,12 +1,18 @@
 :root {
   color-scheme: light;
-  --nextone-color-accent: #5b5ce2;
-  --nextone-color-accent-strong: #4546c7;
-  --nextone-color-background: #f7f8fc;
+  --nextone-color-accent: #2563eb;
+  --nextone-color-accent-strong: #1d4ed8;
+  --nextone-color-background: #f7f7f4;
   --nextone-color-surface: #ffffff;
-  --nextone-color-text: #16181d;
-  --nextone-color-text-muted: #626975;
-  --nextone-color-border: #dfe3eb;
+  --nextone-color-text: #172033;
+  --nextone-color-text-muted: #667085;
+  --nextone-color-border: #e8e9e5;
+  --nextone-color-navigation: #fbfbf8;
+  --nextone-color-navigation-text: #667085;
+  --nextone-color-focus: #eaf0ff;
+  --nextone-font-sans:
+    "Segoe UI Variable Text", "Segoe UI", "PingFang SC", "HarmonyOS Sans SC", "Noto Sans SC",
+    "Microsoft YaHei UI", "Microsoft YaHei", system-ui, sans-serif;
   --nextone-color-danger: #c43d4b;
   --nextone-radius-small: 8px;
   --nextone-radius-medium: 12px;

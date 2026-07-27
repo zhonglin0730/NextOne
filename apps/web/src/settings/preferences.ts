@@ -19,6 +19,7 @@ export function createDefaultPreferences(now = new Date().toISOString()): UserPr
     theme: "SYSTEM",
     focusLimit: 3,
     wipLimit: 3,
+    dailyCapacityMinutes: 240,
     staleDays: 14,
     waitingDays: 7,
     defaultSort: "MANUAL",
@@ -30,7 +31,10 @@ export async function loadPreferences(): Promise<UserPreferences> {
   return nextOneDatabase.transaction(async (transaction) => {
     const stored = await transaction.preferences.get();
     if (stored !== undefined) {
-      return stored;
+      return {
+        ...stored,
+        dailyCapacityMinutes: stored.dailyCapacityMinutes ?? 240,
+      };
     }
     const defaults = createDefaultPreferences();
     await transaction.preferences.save(defaults);

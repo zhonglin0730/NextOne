@@ -10,7 +10,35 @@ import {
   taskApplicationService,
   tasksChangedEvent,
 } from "../tasks/taskService";
-import { getLocalDate } from "./date";
+import { loadPreferences, preferencesChangedEvent } from "../settings/preferences";
+import { DailyCapacity } from "./DailyCapacity";
+import { getLocalDate, getTimeZone } from "./date";
+import { MorningKickoff } from "./MorningKickoff";
+import { ZenMode } from "./ZenMode";
+
+const defaultDailyCapacityMinutes = 240;
+
+function candidateRank(task: Task): number {
+  return task.status === "DOING"
+    ? 0
+    : task.status === "READY"
+      ? 1
+      : task.status === "INBOX"
+        ? 2
+        : 3;
+}
+
+function sortKickoffCandidates(tasks: readonly Task[]): readonly Task[] {
+  return [...new Map(tasks.map((task) => [task.id, task])).values()]
+    .filter((task) => task.status !== "COMPLETED" && task.status !== "CANCELED")
+    .sort(
+      (left, right) =>
+        candidateRank(left) - candidateRank(right) ||
+        (left.deadlineAt ?? "9999").localeCompare(right.deadlineAt ?? "9999") ||
+        left.sortKey.localeCompare(right.sortKey),
+    )
+    .slice(0, 18);
+}
 
 function TodayTaskCard({
   entry,
@@ -104,22 +132,50 @@ export function TodayPage() {
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [kickoffCandidates, setKickoffCandidates] = useState<readonly Task[]>([]);
+  const [kickoffOpen, setKickoffOpen] = useState(false);
+  const [dailyCapacityMinutes, setDailyCapacityMinutes] = useState(defaultDailyCapacityMinutes);
+  const [zenTask, setZenTask] = useState<Task>();
+  const kickoffStorageKey = `nextone.kickoff.${localDate}`;
 
   const load = useCallback(async () => {
     try {
-      setView(await taskApplicationService.getToday(localDate));
+      const [today, inbox, board, preferences] = await Promise.all([
+        taskApplicationService.getToday(localDate),
+        taskApplicationService.listInbox(),
+        taskApplicationService.listBoardTasks(),
+        loadPreferences(),
+      ]);
+      const plannedIds = new Set([...today.focus, ...today.later].map(({ task }) => task.id));
+      const candidates = sortKickoffCandidates(
+        [...inbox, ...board].filter((task) => !plannedIds.has(task.id)),
+      );
+      setView(today);
+      setKickoffCandidates(candidates);
+      setDailyCapacityMinutes(preferences.dailyCapacityMinutes ?? defaultDailyCapacityMinutes);
+      if (
+        today.focus.length === 0 &&
+        candidates.length > 0 &&
+        localStorage.getItem(kickoffStorageKey) === null
+      ) {
+        setKickoffOpen(true);
+      }
       setError("");
     } catch {
       setError(t("common.error"));
     } finally {
       setLoading(false);
     }
-  }, [localDate, t]);
+  }, [kickoffStorageKey, localDate, t]);
 
   useEffect(() => {
     void load();
     window.addEventListener(tasksChangedEvent, load);
-    return () => window.removeEventListener(tasksChangedEvent, load);
+    window.addEventListener(preferencesChangedEvent, load);
+    return () => {
+      window.removeEventListener(tasksChangedEvent, load);
+      window.removeEventListener(preferencesChangedEvent, load);
+    };
   }, [load]);
 
   const confirmOverride = (limit: number) =>
@@ -143,6 +199,34 @@ export function TodayPage() {
       setError(t("common.error"));
     }
   };
+
+  const dismissKickoff = useCallback(() => {
+    localStorage.setItem(kickoffStorageKey, "later");
+    setKickoffOpen(false);
+  }, [kickoffStorageKey]);
+
+  const startDay = async (tasks: readonly Task[]) => {
+    try {
+      for (const task of tasks) {
+        await taskApplicationService.addToToday(task.id, localDate, getTimeZone(), "FOCUS");
+      }
+      localStorage.setItem(kickoffStorageKey, "started");
+      setKickoffOpen(false);
+      notifyTasksChanged();
+      await load();
+    } catch {
+      setError(t("common.error"));
+    }
+  };
+
+  const capacityTasks = useMemo(
+    () => [
+      ...view.focus.map(({ task }) => task),
+      ...view.later.map(({ task }) => task),
+      ...view.doing,
+    ],
+    [view.doing, view.focus, view.later],
+  );
 
   const dateFormatter = new Intl.DateTimeFormat(i18n.resolvedLanguage ?? "zh-CN", {
     dateStyle: "full",
@@ -185,9 +269,20 @@ export function TodayPage() {
             <div className="section-empty">
               <strong>{t("today.emptyFocus")}</strong>
               <p>{t("today.emptyFocusDescription")}</p>
-              <Link className="button button-outline" to="/board">
-                {t("today.openBoard")}
-              </Link>
+              <div className="section-empty-actions">
+                {kickoffCandidates.length > 0 ? (
+                  <button
+                    className="button button-primary"
+                    onClick={() => setKickoffOpen(true)}
+                    type="button"
+                  >
+                    {t("kickoff.open")}
+                  </button>
+                ) : null}
+                <Link className="button button-outline" to="/board">
+                  {t("today.openBoard")}
+                </Link>
+              </div>
             </div>
           ) : (
             <div className="today-task-list">
@@ -201,9 +296,10 @@ export function TodayPage() {
               ))}
             </div>
           )}
+          <DailyCapacity capacityMinutes={dailyCapacityMinutes} tasks={capacityTasks} />
         </section>
 
-        <section className="today-section" aria-labelledby="doing-title">
+        <section className="today-section today-doing" aria-labelledby="doing-title">
           <header className="section-heading">
             <div>
               <h2 id="doing-title">{t("today.doing")}</h2>
@@ -220,6 +316,13 @@ export function TodayPage() {
                   <span className="doing-indicator" aria-hidden="true" />
                   <strong>{task.title}</strong>
                   <div className="card-actions">
+                    <button
+                      className="button button-quiet button-small"
+                      onClick={() => setZenTask(task)}
+                      type="button"
+                    >
+                      {t("zen.open")}
+                    </button>
                     <button
                       className="button button-quiet button-small"
                       onClick={() => void transition(task, "READY")}
@@ -271,6 +374,22 @@ export function TodayPage() {
           )}
         </section>
       </div>
+
+      {kickoffOpen ? (
+        <MorningKickoff
+          candidates={kickoffCandidates}
+          capacityMinutes={dailyCapacityMinutes}
+          onDismiss={dismissKickoff}
+          onStart={startDay}
+        />
+      ) : null}
+      {zenTask === undefined ? null : (
+        <ZenMode
+          onClose={() => setZenTask(undefined)}
+          onTransition={(status) => transition(zenTask, status)}
+          task={zenTask}
+        />
+      )}
     </section>
   );
 }

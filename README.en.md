@@ -4,16 +4,16 @@
 
 NextOne is a personal action system that proactively helps users make trade-offs.
 
-The repository has completed V0.1 M7, Settings, Data Safety, and
-Internationalization. In addition to the complete action and offline-sync
-workflow, the web app now provides locale and action-rule preferences, JSON
-import/export with preview, automatic restore points, local-copy cleanup, and
-a protected account-deletion request API. Product and development
-documentation is available in `docs/`.
+The repository has completed V0.1 M9, Daily Loop. In addition to the complete web
+action and offline-sync workflow, it now includes a native Expo / React Native
+client with transactional SQLite storage, quick capture, Today, Inbox, task
+decisions, opportunistic automatic sync, and SecureStore credentials. The web
+client now also provides a morning kickoff, daily capacity feedback, and Zen
+single-task mode. Product and development documentation is available in `docs/`.
 
 ## Local Requirements
 
-- Node.js 22.12 or later
+- Node.js 22.13 or later
 - pnpm 11
 - Java 17 or later
 - Maven 3.6.3 or later
@@ -28,6 +28,18 @@ pnpm test
 pnpm build
 pnpm dev
 ```
+
+Start the Android development server:
+
+```bash
+pnpm mobile:dev
+```
+
+Scan the terminal QR code with Expo Go on Android, or run
+`pnpm mobile:android` when an Android emulator is configured. Use
+`http://10.0.2.2:8080` to reach the local API from the Android emulator.
+Physical devices need a LAN-accessible or public server URL configured on the
+app's Settings tab.
 
 Start the local database:
 
@@ -59,7 +71,9 @@ For environment variable examples, see `deploy/compose/.env.example` and
   a local restore point first.
 - Clearing a local copy never deletes cloud data, and the browser cannot
   directly execute final account deletion.
-- Android, standard OIDC authentication, and Oracle deployment are planned for
-  later milestones.
+- M8 adds native Android screens without WebView, a SQLite Outbox, foreground
+  and network-recovery sync, and secure local credentials.
+- M9 adds morning planning, daily capacity feedback, and Zen single-task mode.
+- Standard OIDC authentication and Oracle deployment are planned for M10.
 - The system does not depend on Supabase, Redis, message queues, or paid SaaS
   products.

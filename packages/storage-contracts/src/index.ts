@@ -125,6 +125,7 @@ export interface UserPreferences {
   theme: "SYSTEM" | "LIGHT" | "DARK";
   focusLimit: number;
   wipLimit: number;
+  dailyCapacityMinutes: number;
   staleDays: number;
   waitingDays: number;
   defaultSort: "MANUAL" | "CREATED_AT" | "DEADLINE";

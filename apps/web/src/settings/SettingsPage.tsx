@@ -174,6 +174,7 @@ export function SettingsPage() {
             [
               ["focusLimit", "focusLimit", 1, 3],
               ["wipLimit", "wipLimit", 1, 3],
+              ["dailyCapacityMinutes", "dailyCapacityMinutes", 60, 720],
               ["staleDays", "staleDays", 1, 90],
               ["waitingDays", "waitingDays", 1, 90],
             ] as const
