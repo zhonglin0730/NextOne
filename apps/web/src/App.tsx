@@ -1,4 +1,3 @@
-import { supportedLocales, type SupportedLocale } from "@nextone/i18n";
 import { type ReactNode, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { BrowserRouter, Navigate, NavLink, Route, Routes } from "react-router";
@@ -14,7 +13,7 @@ import { startAutomaticSync } from "./sync/syncService";
 import { SyncStatusPage } from "./sync/SyncStatusPage";
 import { DataManagementPage } from "./settings/DataManagementPage";
 import { SettingsPage } from "./settings/SettingsPage";
-import { loadPreferences, localeStorageKey, savePreferences } from "./settings/preferences";
+import { loadPreferences } from "./settings/preferences";
 import { CaptureDialog } from "./tasks/CaptureDialog";
 import { InboxPage } from "./tasks/InboxPage";
 import { TodayPage } from "./today/TodayPage";
@@ -100,7 +99,7 @@ function PlaceholderPage({ pageKey }: { pageKey: NavigationKey }) {
 }
 
 function AppShell() {
-  const { i18n, t } = useTranslation();
+  const { t } = useTranslation();
   const [captureOpen, setCaptureOpen] = useState(false);
 
   useEffect(() => {
@@ -110,18 +109,6 @@ function AppShell() {
     });
     return stopSync;
   }, []);
-
-  const changeLocale = async (locale: SupportedLocale) => {
-    await i18n.changeLanguage(locale);
-    localStorage.setItem(localeStorageKey, locale);
-    const preferences = await loadPreferences();
-    await savePreferences({
-      ...preferences,
-      locale,
-      updatedAt: new Date().toISOString(),
-    });
-    document.documentElement.lang = locale;
-  };
 
   return (
     <div className="app-shell">
@@ -136,33 +123,30 @@ function AppShell() {
               to={item.path}
             >
               <NavigationIcon name={item.key} />
-              <span>{t(`nav.${item.key}`)}</span>
+              <span className="nav-label">{t(`nav.${item.key}`)}</span>
             </NavLink>
           ))}
         </nav>
-
-        <label className="locale-field">
-          <span>{t("shell.locale")}</span>
-          <select
-            onChange={(event) => void changeLocale(event.target.value as SupportedLocale)}
-            value={i18n.resolvedLanguage ?? i18n.language}
-          >
-            {supportedLocales.map((locale) => (
-              <option key={locale} value={locale}>
-                {locale}
-              </option>
-            ))}
-          </select>
-        </label>
       </aside>
 
       <main className="main-content">
         <header className="topbar">
-          <SyncIndicator />
-          <button className="capture-button" onClick={() => setCaptureOpen(true)} type="button">
-            <span aria-hidden="true">＋</span>
-            {t("shell.quickCapture")}
-          </button>
+          <div className="topbar-inner">
+            <div className="topbar-actions">
+              <SyncIndicator />
+              <button
+                aria-label={t("shell.quickCapture")}
+                className="capture-button"
+                onClick={() => setCaptureOpen(true)}
+                type="button"
+              >
+                <span aria-hidden="true" className="capture-icon">
+                  ＋
+                </span>
+                <span className="capture-label">{t("shell.quickCapture")}</span>
+              </button>
+            </div>
+          </div>
         </header>
 
         <Routes>

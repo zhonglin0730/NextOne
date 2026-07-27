@@ -95,6 +95,7 @@ export const zhCN = {
     DOING: "立即开始",
     WAITING: "转为等待",
     COMPLETED: "完成",
+    completeTask: "完成：{{title}}",
     CANCELED: "放弃",
     pause: "暂停",
     someday: "以后再说",

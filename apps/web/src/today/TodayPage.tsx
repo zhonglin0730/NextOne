@@ -42,26 +42,50 @@ function sortKickoffCandidates(tasks: readonly Task[]): readonly Task[] {
 
 function TodayTaskCard({
   entry,
+  isCompleting,
+  onComplete,
   onRemove,
   onTransition,
+  variant,
 }: {
   entry: TodayTask;
+  isCompleting: boolean;
+  onComplete: (task: Task) => void;
   onRemove: (task: Task) => void;
   onTransition: (task: Task, status: TaskStatus) => void;
+  variant: "focus" | "later";
 }) {
   const { t } = useTranslation();
   const { task } = entry;
 
   return (
-    <article className="today-task-card">
-      <div>
-        <span className={`status-badge status-${task.status.toLowerCase()}`}>
-          {t(`status.${task.status}`)}
-        </span>
-        <h3>{task.title}</h3>
-        {task.estimateMinutes === undefined ? null : (
-          <p>{t("today.minutes", { count: task.estimateMinutes })}</p>
-        )}
+    <article
+      className={`today-task-card today-task-card-${variant} ${isCompleting ? "task-completing" : ""}`}
+    >
+      <div className="task-card-main">
+        {variant === "focus" && task.status !== "INBOX" ? (
+          <button
+            aria-label={t("action.completeTask", { title: task.title })}
+            className="task-checkbox"
+            disabled={isCompleting}
+            onClick={() => onComplete(task)}
+            title={t("action.completeTask", { title: task.title })}
+            type="button"
+          >
+            <span aria-hidden="true" className="checkbox-inner">
+              ✓
+            </span>
+          </button>
+        ) : null}
+        <div>
+          <span className={`status-badge status-${task.status.toLowerCase()}`}>
+            {t(`status.${task.status}`)}
+          </span>
+          <h3>{task.title}</h3>
+          {task.estimateMinutes === undefined ? null : (
+            <p>{t("today.minutes", { count: task.estimateMinutes })}</p>
+          )}
+        </div>
       </div>
       <div className="card-actions">
         {task.status === "INBOX" ? (
@@ -82,40 +106,45 @@ function TodayTaskCard({
             {t("action.DOING")}
           </button>
         ) : null}
-        {task.status === "DOING" ? (
+        <div className="card-actions-secondary">
+          {task.status === "DOING" ? (
+            <button
+              className="button button-quiet button-small"
+              onClick={() => onTransition(task, "READY")}
+              type="button"
+            >
+              {t("action.pause")}
+            </button>
+          ) : null}
+          {task.status === "DOING" || task.status === "READY" ? (
+            <button
+              className="button button-quiet button-small"
+              onClick={() => onTransition(task, "WAITING")}
+              type="button"
+            >
+              {t("action.WAITING")}
+            </button>
+          ) : null}
+          {variant === "later" && task.status !== "INBOX" ? (
+            <button
+              aria-label={t("action.completeTask", { title: task.title })}
+              className="button button-quiet button-small"
+              disabled={isCompleting}
+              onClick={() => onComplete(task)}
+              title={t("action.completeTask", { title: task.title })}
+              type="button"
+            >
+              {t("action.COMPLETED")}
+            </button>
+          ) : null}
           <button
             className="button button-quiet button-small"
-            onClick={() => onTransition(task, "READY")}
+            onClick={() => onRemove(task)}
             type="button"
           >
-            {t("action.pause")}
+            {t("action.removeToday")}
           </button>
-        ) : null}
-        {task.status === "DOING" || task.status === "READY" ? (
-          <button
-            className="button button-quiet button-small"
-            onClick={() => onTransition(task, "WAITING")}
-            type="button"
-          >
-            {t("action.WAITING")}
-          </button>
-        ) : null}
-        {task.status !== "INBOX" ? (
-          <button
-            className="button button-quiet button-small"
-            onClick={() => onTransition(task, "COMPLETED")}
-            type="button"
-          >
-            {t("action.COMPLETED")}
-          </button>
-        ) : null}
-        <button
-          className="button button-quiet button-small"
-          onClick={() => onRemove(task)}
-          type="button"
-        >
-          {t("action.removeToday")}
-        </button>
+        </div>
       </div>
     </article>
   );
@@ -136,6 +165,7 @@ export function TodayPage() {
   const [kickoffOpen, setKickoffOpen] = useState(false);
   const [dailyCapacityMinutes, setDailyCapacityMinutes] = useState(defaultDailyCapacityMinutes);
   const [zenTask, setZenTask] = useState<Task>();
+  const [completingIds, setCompletingIds] = useState<ReadonlySet<string>>(new Set());
   const kickoffStorageKey = `nextone.kickoff.${localDate}`;
 
   const load = useCallback(async () => {
@@ -196,6 +226,39 @@ export function TodayPage() {
       notifyTasksChanged();
       await load();
     } catch {
+      setError(t("common.error"));
+    }
+  };
+
+  const handleComplete = async (task: Task) => {
+    if (completingIds.has(task.id)) return;
+    setCompletingIds((current) => new Set([...current, task.id]));
+    try {
+      await taskApplicationService.transition(task.id, "COMPLETED");
+      const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      if (reducedMotion) {
+        notifyTasksChanged();
+        setCompletingIds((current) => {
+          const next = new Set(current);
+          next.delete(task.id);
+          return next;
+        });
+      } else {
+        setTimeout(() => {
+          notifyTasksChanged();
+          setCompletingIds((current) => {
+            const next = new Set(current);
+            next.delete(task.id);
+            return next;
+          });
+        }, 320);
+      }
+    } catch {
+      setCompletingIds((current) => {
+        const next = new Set(current);
+        next.delete(task.id);
+        return next;
+      });
       setError(t("common.error"));
     }
   };
@@ -289,9 +352,12 @@ export function TodayPage() {
               {view.focus.map((entry) => (
                 <TodayTaskCard
                   entry={entry}
+                  isCompleting={completingIds.has(entry.task.id)}
                   key={entry.item.id}
+                  onComplete={(task) => void handleComplete(task)}
                   onRemove={(task) => void remove(task)}
                   onTransition={(task, status) => void transition(task, status)}
+                  variant="focus"
                 />
               ))}
             </div>
@@ -312,8 +378,23 @@ export function TodayPage() {
           ) : (
             <div className="doing-list">
               {view.doing.map((task) => (
-                <article className="doing-row" key={task.id}>
-                  <span className="doing-indicator" aria-hidden="true" />
+                <article
+                  className={`doing-row ${completingIds.has(task.id) ? "task-completing" : ""}`}
+                  key={task.id}
+                >
+                  <button
+                    aria-label={t("action.completeTask", { title: task.title })}
+                    className="task-checkbox"
+                    disabled={completingIds.has(task.id)}
+                    onClick={() => void handleComplete(task)}
+                    title={t("action.completeTask", { title: task.title })}
+                    type="button"
+                  >
+                    <span aria-hidden="true" className="checkbox-inner">
+                      ✓
+                    </span>
+                  </button>
+                  <span aria-hidden="true" className="doing-indicator" />
                   <strong>{task.title}</strong>
                   <div className="card-actions">
                     <button
@@ -323,27 +404,22 @@ export function TodayPage() {
                     >
                       {t("zen.open")}
                     </button>
-                    <button
-                      className="button button-quiet button-small"
-                      onClick={() => void transition(task, "READY")}
-                      type="button"
-                    >
-                      {t("action.pause")}
-                    </button>
-                    <button
-                      className="button button-quiet button-small"
-                      onClick={() => void transition(task, "WAITING")}
-                      type="button"
-                    >
-                      {t("action.WAITING")}
-                    </button>
-                    <button
-                      className="button button-primary button-small"
-                      onClick={() => void transition(task, "COMPLETED")}
-                      type="button"
-                    >
-                      {t("action.COMPLETED")}
-                    </button>
+                    <div className="card-actions-secondary">
+                      <button
+                        className="button button-quiet button-small"
+                        onClick={() => void transition(task, "READY")}
+                        type="button"
+                      >
+                        {t("action.pause")}
+                      </button>
+                      <button
+                        className="button button-quiet button-small"
+                        onClick={() => void transition(task, "WAITING")}
+                        type="button"
+                      >
+                        {t("action.WAITING")}
+                      </button>
+                    </div>
                   </div>
                 </article>
               ))}
@@ -365,9 +441,12 @@ export function TodayPage() {
               {view.later.map((entry) => (
                 <TodayTaskCard
                   entry={entry}
+                  isCompleting={completingIds.has(entry.task.id)}
                   key={entry.item.id}
+                  onComplete={(task) => void handleComplete(task)}
                   onRemove={(task) => void remove(task)}
                   onTransition={(task, status) => void transition(task, status)}
+                  variant="later"
                 />
               ))}
             </div>
