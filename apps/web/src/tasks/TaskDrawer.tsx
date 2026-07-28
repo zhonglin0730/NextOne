@@ -97,6 +97,7 @@ export function TaskDrawer({ task, onClose, onTaskChanged }: TaskDrawerProps) {
       await loadEvents();
       setDirty(false);
       setSaved(true);
+      window.setTimeout(onClose, 450);
     } catch {
       setError(t("common.error"));
     } finally {
@@ -152,6 +153,20 @@ export function TaskDrawer({ task, onClose, onTaskChanged }: TaskDrawerProps) {
   };
 
   const availableTransitions = [...allowedTaskTransitions[task.status]];
+  const visibleTransitions = availableTransitions.filter((status) => {
+    if (status === "CANCELED") {
+      return false;
+    }
+    if (task.status === "INBOX") {
+      return status === "READY";
+    }
+    if (task.status === "WAITING") {
+      return status === "READY" || status === "COMPLETED";
+    }
+    return (
+      status === "READY" || status === "DOING" || status === "WAITING" || status === "COMPLETED"
+    );
+  });
   const formatter = new Intl.DateTimeFormat(i18n.resolvedLanguage ?? "zh-CN", {
     dateStyle: "medium",
     timeStyle: "short",
@@ -186,29 +201,33 @@ export function TaskDrawer({ task, onClose, onTaskChanged }: TaskDrawerProps) {
             {t(`status.${task.status}`)}
           </span>
           <div className="status-actions">
-            <button
-              className="button button-outline"
-              disabled={submitting || addedToday}
-              onClick={() => void addToday()}
-              type="button"
-            >
-              {addedToday ? t("task.addedToday") : t("task.addToday")}
-            </button>
-            {availableTransitions
-              .filter((status) => status !== "CANCELED")
-              .map((status) => (
-                <button
-                  className="button button-quiet"
-                  disabled={submitting}
-                  key={status}
-                  onClick={() => void changeStatus(status)}
-                  type="button"
-                >
-                  {t(`action.${status}`)}
-                </button>
-              ))}
+            {task.status === "READY" ? (
+              <button
+                className="button button-outline"
+                disabled={submitting || addedToday}
+                onClick={() => void addToday()}
+                type="button"
+              >
+                {addedToday ? t("task.addedToday") : t("task.addToday")}
+              </button>
+            ) : null}
+            {visibleTransitions.map((status) => (
+              <button
+                className={`button ${status === "DOING" ? "button-primary" : "button-quiet"}`}
+                disabled={submitting}
+                key={status}
+                onClick={() => void changeStatus(status)}
+                type="button"
+              >
+                {t(`action.${status}`)}
+              </button>
+            ))}
           </div>
         </div>
+
+        {task.status === "WAITING" ? (
+          <p className="waiting-workflow-hint">{t("task.waitingTodayHint")}</p>
+        ) : null}
 
         <form className="task-form" onSubmit={save}>
           <label className="form-field details-span">
@@ -262,12 +281,13 @@ export function TaskDrawer({ task, onClose, onTaskChanged }: TaskDrawerProps) {
             />
           </label>
           <label className="form-field">
-            <span>{t("task.reviewAt")}</span>
+            <span>{t(task.status === "WAITING" ? "task.followUpAt" : "task.reviewAt")}</span>
             <input
               onChange={(event) => {
                 setReviewAt(event.target.value);
                 markDirty();
               }}
+              required={task.status === "WAITING"}
               type="date"
               value={reviewAt}
             />
@@ -307,8 +327,11 @@ export function TaskDrawer({ task, onClose, onTaskChanged }: TaskDrawerProps) {
                   setWaitingFor(event.target.value);
                   markDirty();
                 }}
+                placeholder={t("task.waitingForPlaceholder")}
+                required
                 value={waitingFor}
               />
+              <small>{t("task.waitingForHint")}</small>
             </label>
           ) : null}
 

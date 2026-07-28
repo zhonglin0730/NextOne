@@ -257,8 +257,7 @@ export function ProjectDetailPage() {
                   <span>{t(`status.${overview.focusTask.status}`)}</span>
                 </button>
                 <div className="card-actions">
-                  {overview.focusTask.status === "READY" ||
-                  overview.focusTask.status === "WAITING" ? (
+                  {overview.focusTask.status === "READY" ? (
                     <button
                       className="button button-primary button-small"
                       onClick={() => void transition(overview.focusTask!, "DOING")}
@@ -276,21 +275,23 @@ export function ProjectDetailPage() {
                       {t("action.WAITING")}
                     </button>
                   ) : null}
-                  <button
-                    className="button button-outline button-small"
-                    disabled={
-                      todayTaskIds.has(overview.focusTask.id) ||
-                      addingTodayTaskId === overview.focusTask.id
-                    }
-                    onClick={() => void addFocusToday(overview.focusTask!)}
-                    type="button"
-                  >
-                    {addingTodayTaskId === overview.focusTask.id
-                      ? t("project.addingToday")
-                      : todayTaskIds.has(overview.focusTask.id)
-                        ? t("project.addedToday")
-                        : t("project.addToday")}
-                  </button>
+                  {overview.focusTask.status === "READY" ? (
+                    <button
+                      className="button button-outline button-small"
+                      disabled={
+                        todayTaskIds.has(overview.focusTask.id) ||
+                        addingTodayTaskId === overview.focusTask.id
+                      }
+                      onClick={() => void addFocusToday(overview.focusTask!)}
+                      type="button"
+                    >
+                      {addingTodayTaskId === overview.focusTask.id
+                        ? t("project.addingToday")
+                        : todayTaskIds.has(overview.focusTask.id)
+                          ? t("project.addedToday")
+                          : t("project.addToday")}
+                    </button>
+                  ) : null}
                 </div>
               </div>
             )}
@@ -365,7 +366,6 @@ export function ProjectDetailPage() {
               <div className="project-task-list">
                 {detail.waiting.map((task) => (
                   <ProjectTaskRow
-                    focusAction={overview.focusTask?.id !== task.id}
                     key={task.id}
                     onOpen={setSelectedTask}
                     onSetFocus={(candidate) => void setFocus(candidate)}

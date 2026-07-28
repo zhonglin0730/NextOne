@@ -520,6 +520,59 @@ export class IndexedDbLocalDatabase implements LocalDatabase {
     return this.databasePromise;
   }
 
+  async replaceWithServerSnapshot(
+    snapshot: LocalDataSnapshot,
+    cursor: number,
+    synchronizedAt: string,
+  ): Promise<void> {
+    const database = await this.getDatabase();
+    const serverControlledStores = [
+      stores.tasks,
+      stores.areas,
+      stores.projects,
+      stores.taskEvents,
+      stores.dailyPlans,
+      stores.dailyPlanItems,
+      stores.outbox,
+      stores.syncState,
+      stores.syncConflicts,
+    ] as const;
+    const indexedDbTransaction = database.transaction(serverControlledStores, "readwrite");
+    const completion = transactionToPromise(indexedDbTransaction);
+
+    for (const storeName of serverControlledStores) {
+      await requestToPromise(indexedDbTransaction.objectStore(storeName).clear());
+    }
+    for (const value of snapshot.areas) {
+      await requestToPromise(indexedDbTransaction.objectStore(stores.areas).put(value));
+    }
+    for (const value of snapshot.projects) {
+      await requestToPromise(indexedDbTransaction.objectStore(stores.projects).put(value));
+    }
+    for (const value of snapshot.tasks) {
+      await requestToPromise(indexedDbTransaction.objectStore(stores.tasks).put(value));
+    }
+    for (const value of snapshot.taskEvents) {
+      await requestToPromise(indexedDbTransaction.objectStore(stores.taskEvents).put(value));
+    }
+    for (const value of snapshot.dailyPlans) {
+      await requestToPromise(indexedDbTransaction.objectStore(stores.dailyPlans).put(value));
+    }
+    for (const value of snapshot.dailyPlanItems) {
+      await requestToPromise(indexedDbTransaction.objectStore(stores.dailyPlanItems).put(value));
+    }
+    await requestToPromise(
+      indexedDbTransaction.objectStore(stores.syncState).put({
+        id: "default",
+        cursor,
+        status: "UP_TO_DATE",
+        lastSyncAt: synchronizedAt,
+        retryCount: 0,
+      } satisfies SyncState),
+    );
+    await completion;
+  }
+
   async transaction<T>(work: (transaction: StorageTransaction) => Promise<T>): Promise<T> {
     const database = await this.getDatabase();
     const indexedDbTransaction = database.transaction(Object.values(stores), "readwrite");

@@ -12,6 +12,8 @@ import {
   saveSyncConfiguration,
   type SyncConfiguration,
 } from "./config";
+import { announceSyncedDataChanged, localMutationsPendingEvent } from "./dataChangeEvents";
+import { toLocalSnapshot, type ServerBootstrapSnapshot } from "./serverSnapshot";
 const syncChangedEvent = "nextone:sync-changed";
 export { getSyncConfiguration, saveSyncConfiguration, type SyncConfiguration };
 
@@ -59,7 +61,30 @@ export function getSyncSummary(): Promise<SyncSummary> {
 
 export async function syncNow(): Promise<SyncSummary> {
   announceChange();
-  const summary = await engine.syncNow();
+  let summary = await engine.syncNow();
+  if (summary.state.status === "UP_TO_DATE" && summary.pendingCount === 0) {
+    const synchronizedAt = new Date().toISOString();
+    try {
+      const bootstrap = await apiRequest<ServerBootstrapSnapshot>("/api/v1/bootstrap");
+      await nextOneDatabase.replaceWithServerSnapshot(
+        toLocalSnapshot(bootstrap, synchronizedAt),
+        summary.state.cursor,
+        synchronizedAt,
+      );
+      summary = await engine.summary();
+    } catch {
+      await nextOneDatabase.transaction(async (transaction) => {
+        await transaction.syncState.save({
+          ...summary.state,
+          status: "ERROR",
+          lastError: "SERVER_SNAPSHOT_FAILED",
+          retryCount: summary.state.retryCount + 1,
+        });
+      });
+      summary = await engine.summary();
+    }
+  }
+  announceSyncedDataChanged();
   announceChange();
   return summary;
 }
@@ -87,11 +112,37 @@ export function startAutomaticSync(): () => void {
       void syncNow();
     }
   };
+  let pendingTimer: number | undefined;
+  const schedule = () => {
+    if (pendingTimer !== undefined) {
+      window.clearTimeout(pendingTimer);
+    }
+    pendingTimer = window.setTimeout(() => {
+      pendingTimer = undefined;
+      attempt();
+    }, 250);
+  };
+  const syncWhenVisible = () => {
+    if (document.visibilityState === "visible") {
+      attempt();
+    }
+  };
+
   const interval = window.setInterval(attempt, 30_000);
   window.addEventListener("online", attempt);
-  window.setTimeout(attempt, 500);
+  window.addEventListener("focus", attempt);
+  window.addEventListener(localMutationsPendingEvent, schedule);
+  document.addEventListener("visibilitychange", syncWhenVisible);
+  attempt();
+
   return () => {
     window.clearInterval(interval);
+    if (pendingTimer !== undefined) {
+      window.clearTimeout(pendingTimer);
+    }
     window.removeEventListener("online", attempt);
+    window.removeEventListener("focus", attempt);
+    window.removeEventListener(localMutationsPendingEvent, schedule);
+    document.removeEventListener("visibilitychange", syncWhenVisible);
   };
 }

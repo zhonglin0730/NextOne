@@ -63,7 +63,11 @@ export function DailyClosePage() {
   const continueTomorrow = async (entry: TodayTask) => {
     try {
       const section = tomorrowCount < 3 ? "FOCUS" : "LATER";
-      await taskApplicationService.addToToday(entry.task.id, tomorrow, getTimeZone(), section);
+      const actionableTask =
+        entry.task.status === "INBOX"
+          ? await taskApplicationService.transition(entry.task.id, "READY")
+          : entry.task;
+      await taskApplicationService.addToToday(actionableTask.id, tomorrow, getTimeZone(), section);
       if (section === "FOCUS") {
         setTomorrowCount((count) => count + 1);
       }

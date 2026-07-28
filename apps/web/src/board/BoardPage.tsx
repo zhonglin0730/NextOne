@@ -15,7 +15,7 @@ import {
 } from "../tasks/taskService";
 import { getLocalDate, getTimeZone } from "../today/date";
 
-const columns: readonly BoardColumn[] = ["READY", "DOING", "WAITING", "SOMEDAY"];
+const columns: readonly BoardColumn[] = ["READY", "DOING", "WAITING"];
 
 export function BoardPage() {
   const { t } = useTranslation();
@@ -111,6 +111,7 @@ export function BoardPage() {
 
   const visibleTasks =
     projectId === undefined ? tasks : tasks.filter((task) => task.projectId === projectId);
+  const somedayTasks = visibleTasks.filter((task) => task.visibility === "SOMEDAY");
 
   const tasksForColumn = (column: BoardColumn) =>
     visibleTasks.filter((task) =>
@@ -211,16 +212,20 @@ export function BoardPage() {
                         <time dateTime={task.reviewAt}>{task.reviewAt}</time>
                       )}
                       <div className="board-card-actions">
-                        {column !== "DOING" ? (
+                        {column === "READY" ? (
                           <button onClick={() => void moveTask(task.id, "DOING")} type="button">
                             {t("action.DOING")}
                           </button>
-                        ) : (
+                        ) : column === "DOING" ? (
                           <button onClick={() => void transition(task, "READY")} type="button">
                             {t("action.pause")}
                           </button>
-                        )}
-                        {column !== "WAITING" ? (
+                        ) : column === "WAITING" || column === "SOMEDAY" ? (
+                          <button onClick={() => void moveTask(task.id, "READY")} type="button">
+                            {t("action.READY")}
+                          </button>
+                        ) : null}
+                        {column === "READY" || column === "DOING" ? (
                           <button onClick={() => void moveTask(task.id, "WAITING")} type="button">
                             {t("action.WAITING")}
                           </button>
@@ -229,21 +234,21 @@ export function BoardPage() {
                           <button onClick={() => void moveTask(task.id, "SOMEDAY")} type="button">
                             {t("action.someday")}
                           </button>
-                        ) : (
-                          <button onClick={() => void moveTask(task.id, "READY")} type="button">
-                            {t("action.READY")}
-                          </button>
-                        )}
+                        ) : null}
                         <button onClick={() => void transition(task, "COMPLETED")} type="button">
                           {t("action.COMPLETED")}
                         </button>
-                        <button
-                          disabled={todayTaskIds.has(task.id)}
-                          onClick={() => void addToday(task)}
-                          type="button"
-                        >
-                          {todayTaskIds.has(task.id) ? t("board.addedToday") : t("board.addToday")}
-                        </button>
+                        {task.status === "READY" && task.visibility !== "SOMEDAY" ? (
+                          <button
+                            disabled={todayTaskIds.has(task.id)}
+                            onClick={() => void addToday(task)}
+                            type="button"
+                          >
+                            {todayTaskIds.has(task.id)
+                              ? t("board.addedToday")
+                              : t("board.addToday")}
+                          </button>
+                        ) : null}
                       </div>
                     </article>
                   ))
@@ -253,6 +258,41 @@ export function BoardPage() {
           );
         })}
       </div>
+
+      <details className="board-someday-pool">
+        <summary>
+          <span>
+            <strong>{t("board.columns.SOMEDAY")}</strong>
+            <small>{t("board.somedayDescription")}</small>
+          </span>
+          <span className="count-pill">{somedayTasks.length}</span>
+        </summary>
+        {somedayTasks.length === 0 ? (
+          <p className="column-empty">{t("board.emptyColumn")}</p>
+        ) : (
+          <div className="board-someday-list">
+            {somedayTasks.map((task) => (
+              <article className="board-card" key={task.id}>
+                <button
+                  className="board-card-title"
+                  onClick={() => setSelectedTask(task)}
+                  type="button"
+                >
+                  {task.title}
+                </button>
+                <div className="board-card-actions">
+                  <button onClick={() => void moveTask(task.id, "READY")} type="button">
+                    {t("action.READY")}
+                  </button>
+                  <button onClick={() => void transition(task, "COMPLETED")} type="button">
+                    {t("action.COMPLETED")}
+                  </button>
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
+      </details>
 
       {selectedTask === undefined ? null : (
         <TaskDrawer

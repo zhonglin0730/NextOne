@@ -6,8 +6,9 @@ import {
 
 import { nextOneDatabase } from "../storage/indexedDb";
 import { loadActionRules } from "../settings/preferences";
+import { announceLocalDataChanged, tasksChangedEvent } from "../sync/dataChangeEvents";
 
-export const tasksChangedEvent = "nextone:tasks-changed";
+export { tasksChangedEvent };
 
 const applicationDependencies = {
   database: nextOneDatabase,
@@ -23,5 +24,5 @@ export const projectApplicationService = new ProjectApplicationService(applicati
 export const reviewApplicationService = new ReviewApplicationService(applicationDependencies);
 
 export function notifyTasksChanged(): void {
-  window.dispatchEvent(new Event(tasksChangedEvent));
+  announceLocalDataChanged();
 }

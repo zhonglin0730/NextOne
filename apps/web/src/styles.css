@@ -28,6 +28,33 @@ textarea {
   font: inherit;
 }
 
+input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+select,
+textarea {
+  color: var(--nextone-color-text);
+  background-color: var(--nextone-color-control);
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--nextone-color-text-muted);
+  opacity: 1;
+}
+
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+textarea:-webkit-autofill,
+textarea:-webkit-autofill:hover,
+textarea:-webkit-autofill:focus,
+select:-webkit-autofill,
+select:-webkit-autofill:hover,
+select:-webkit-autofill:focus {
+  -webkit-text-fill-color: var(--nextone-color-text);
+  box-shadow: 0 0 0 1000px var(--nextone-color-control) inset;
+  caret-color: var(--nextone-color-text);
+}
+
 button:focus-visible,
 input:focus-visible,
 select:focus-visible,
@@ -621,8 +648,9 @@ a:focus-visible {
   resize: vertical;
   padding: var(--nextone-space-md);
   color: var(--nextone-color-text);
-  background: white;
-  border: 1.5px solid color-mix(in srgb, var(--nextone-color-accent) 65%, white);
+  background: var(--nextone-color-control);
+  border: 1.5px solid
+    color-mix(in srgb, var(--nextone-color-accent) 65%, var(--nextone-color-border));
   border-radius: var(--nextone-radius-medium);
   font-size: 1.05rem;
   line-height: 1.6;
@@ -670,8 +698,8 @@ a:focus-visible {
 
 .capture-destination input:checked + span {
   color: var(--nextone-color-accent-strong);
-  background: color-mix(in srgb, var(--nextone-color-accent) 9%, white);
-  border-color: color-mix(in srgb, var(--nextone-color-accent) 34%, white);
+  background: color-mix(in srgb, var(--nextone-color-accent) 12%, var(--nextone-color-control));
+  border-color: color-mix(in srgb, var(--nextone-color-accent) 42%, var(--nextone-color-border));
 }
 
 .capture-destination input:focus-visible + span {
@@ -724,7 +752,7 @@ a:focus-visible {
   min-height: 42px;
   padding: 10px 12px;
   color: var(--nextone-color-text);
-  background: var(--nextone-color-background);
+  background: var(--nextone-color-control);
   border: 1px solid var(--nextone-color-border);
   border-radius: var(--nextone-radius-small);
   resize: vertical;
@@ -778,6 +806,16 @@ a:focus-visible {
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: var(--nextone-space-sm);
+}
+
+.waiting-workflow-hint {
+  margin: 0 0 var(--nextone-space-md);
+  padding: 10px 12px;
+  color: var(--nextone-color-text-muted);
+  background: color-mix(in srgb, #c58a3a 9%, var(--nextone-color-control));
+  border: 1px solid color-mix(in srgb, #c58a3a 24%, var(--nextone-color-border));
+  border-radius: var(--nextone-radius-small);
+  font-size: 0.8rem;
 }
 
 .status-badge {
@@ -1552,7 +1590,7 @@ a:focus-visible {
 
 .board-columns {
   display: grid;
-  grid-template-columns: repeat(4, minmax(220px, 1fr));
+  grid-template-columns: repeat(3, minmax(220px, 1fr));
   gap: var(--nextone-space-md);
   padding-block-end: var(--nextone-space-md);
 }
@@ -1560,7 +1598,7 @@ a:focus-visible {
 .board-column {
   min-height: 580px;
   padding: 12px;
-  background: color-mix(in srgb, var(--nextone-color-background) 88%, white);
+  background: color-mix(in srgb, var(--nextone-color-background) 88%, var(--nextone-color-surface));
   border: 1px solid var(--nextone-color-border);
   border-radius: var(--nextone-radius-medium);
 }
@@ -1584,17 +1622,17 @@ a:focus-visible {
   min-width: 26px;
   height: 26px;
   color: var(--nextone-color-text-muted);
-  background: white;
+  background: var(--nextone-color-control);
   border-radius: 999px;
   font-size: 0.75rem;
 }
 
 .board-column-doing {
-  background: color-mix(in srgb, var(--nextone-color-accent) 4%, white);
+  background: color-mix(in srgb, var(--nextone-color-accent) 6%, var(--nextone-color-surface));
 }
 
 .board-column-waiting {
-  background: color-mix(in srgb, #f3a53d 5%, white);
+  background: color-mix(in srgb, #c58a3a 7%, var(--nextone-color-surface));
 }
 
 .board-column-someday {
@@ -1663,6 +1701,50 @@ a:focus-visible {
 
 .board-card-actions button:hover:not(:disabled) {
   color: var(--nextone-color-accent-strong);
+}
+
+.board-someday-pool {
+  margin-block-start: var(--nextone-space-sm);
+  padding: var(--nextone-space-md);
+  background: color-mix(in srgb, var(--nextone-color-surface) 70%, transparent);
+  border: 1px solid var(--nextone-color-border);
+  border-radius: var(--nextone-radius-medium);
+}
+
+.board-someday-pool > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--nextone-space-md);
+  cursor: pointer;
+  list-style: none;
+}
+
+.board-someday-pool > summary::-webkit-details-marker {
+  display: none;
+}
+
+.board-someday-pool > summary > span:first-child {
+  display: grid;
+  gap: 3px;
+}
+
+.board-someday-pool > summary small {
+  color: var(--nextone-color-text-muted);
+  font-weight: 400;
+}
+
+.board-someday-list {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--nextone-space-sm);
+  margin-block-start: var(--nextone-space-md);
+  padding-block-start: var(--nextone-space-md);
+  border-block-start: 1px solid var(--nextone-color-border);
+}
+
+.board-someday-list .board-card {
+  cursor: default;
 }
 
 .board-card-actions button:disabled {
@@ -2411,6 +2493,8 @@ html[data-theme="dark"] .project-progress {
   flex: 1;
   min-width: 0;
   padding: 10px 12px;
+  color: var(--nextone-color-text);
+  background: var(--nextone-color-control);
   border: 1px solid var(--nextone-color-border);
   border-radius: var(--nextone-radius-small);
 }
@@ -2609,6 +2693,8 @@ html[data-theme="dark"] .project-progress {
 .review-date-action input {
   min-height: 32px;
   padding-inline: 8px;
+  color: var(--nextone-color-text);
+  background: var(--nextone-color-control);
   border: 1px solid var(--nextone-color-border);
   border-radius: var(--nextone-radius-small);
 }
@@ -2930,11 +3016,32 @@ html[data-theme="dark"] .project-progress {
   gap: 7px;
 }
 
+.sync-secret-field {
+  display: grid;
+  gap: 7px;
+}
+
+.sync-field-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--nextone-space-md);
+}
+
+.button-link {
+  padding: 0;
+  color: var(--nextone-color-accent-strong);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  font-size: 0.78rem;
+}
+
 .sync-settings input {
   min-height: 44px;
   padding-inline: 12px;
   color: var(--nextone-color-text);
-  background: var(--nextone-color-background);
+  background: var(--nextone-color-control);
   border: 1px solid var(--nextone-color-border);
   border-radius: var(--nextone-radius-small);
 }
@@ -3075,7 +3182,7 @@ html[data-theme="dark"] .project-progress {
   min-height: 42px;
   padding-inline: 11px;
   color: var(--nextone-color-text);
-  background: var(--nextone-color-background);
+  background: var(--nextone-color-control);
   border: 1px solid var(--nextone-color-border);
   border-radius: var(--nextone-radius-small);
 }
@@ -3294,6 +3401,7 @@ html[data-theme="dark"] {
   color-scheme: dark;
   --nextone-color-background: #101217;
   --nextone-color-surface: #191c24;
+  --nextone-color-control: #12151c;
   --nextone-color-text: #f2f4f7;
   --nextone-color-text-muted: #9da5b3;
   --nextone-color-border: #2a2f3a;
@@ -3307,6 +3415,7 @@ html[data-theme="dark"] {
     color-scheme: dark;
     --nextone-color-background: #101217;
     --nextone-color-surface: #191c24;
+    --nextone-color-control: #12151c;
     --nextone-color-text: #f2f4f7;
     --nextone-color-text-muted: #9da5b3;
     --nextone-color-border: #2a2f3a;
@@ -3318,6 +3427,10 @@ html[data-theme="dark"] {
 
 @media (max-width: 1220px) and (min-width: 901px) {
   .board-columns {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .board-someday-list {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -3680,6 +3793,10 @@ html[data-theme="dark"] {
   }
 
   .board-columns {
+    grid-template-columns: 1fr;
+  }
+
+  .board-someday-list {
     grid-template-columns: 1fr;
   }
 

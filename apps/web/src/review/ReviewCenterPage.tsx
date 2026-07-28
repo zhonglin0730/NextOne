@@ -163,12 +163,14 @@ export function ReviewCenterPage() {
                   <p>{t(`status.${task.status}`)}</p>
                 </div>
                 <div className="review-actions">
-                  <button
-                    className="button button-outline button-small"
-                    onClick={() => void addToday(task)}
-                  >
-                    {t("task.addToday")}
-                  </button>
+                  {task.status === "READY" ? (
+                    <button
+                      className="button button-outline button-small"
+                      onClick={() => void addToday(task)}
+                    >
+                      {t("task.addToday")}
+                    </button>
+                  ) : null}
                   {task.status === "READY" ? (
                     <>
                       <button

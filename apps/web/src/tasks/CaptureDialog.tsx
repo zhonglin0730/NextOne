@@ -80,6 +80,7 @@ export function CaptureDialog({ defaultDestination, open, onClose }: CaptureDial
         setCapturedTaskId(task.id);
       }
       if (destination === "TODAY") {
+        await taskApplicationService.transition(taskId, "READY");
         await taskApplicationService.addToToday(taskId, getLocalDate(), getTimeZone());
       }
       notifyTasksChanged();

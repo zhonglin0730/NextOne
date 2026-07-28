@@ -1,56 +1,23 @@
-import type { SyncConflict, SyncState } from "@nextone/storage-contracts";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { nextOneDatabase } from "../storage/indexedDb";
 import { SettingsNav } from "../settings/SettingsNav";
 import {
   getSyncConfiguration,
   getSyncSummary,
   saveSyncConfiguration,
-  resolveSyncConflict,
   subscribeToSyncChanges,
   syncNow,
   type SyncConfiguration,
 } from "./syncService";
 
-interface Details {
-  state: SyncState;
-  pendingCount: number;
-  blockedCount: number;
-  conflicts: readonly SyncConflict[];
-}
-
-async function loadDetails(): Promise<Details> {
-  const summary = await getSyncSummary();
-  const conflicts = await nextOneDatabase.transaction((transaction) =>
-    transaction.syncConflicts.listOpen(),
-  );
-  return { ...summary, conflicts };
-}
-
-function groupConflicts(conflicts: readonly SyncConflict[]): readonly SyncConflict[] {
-  const grouped = new Map<string, SyncConflict>();
-  for (const conflict of conflicts) {
-    const key = `${conflict.entityType}:${conflict.entityId}`;
-    const existing = grouped.get(key);
-    if (
-      existing === undefined ||
-      (existing.serverPayload === undefined && conflict.serverPayload)
-    ) {
-      grouped.set(key, conflict);
-    }
-  }
-  return [...grouped.values()];
-}
-
 export function SyncStatusPage() {
   const { t } = useTranslation();
   const [configuration, setConfiguration] = useState<SyncConfiguration>(getSyncConfiguration);
-  const [details, setDetails] = useState<Details>();
-  const visibleConflicts = groupConflicts(details?.conflicts ?? []);
+  const [details, setDetails] = useState<Awaited<ReturnType<typeof getSyncSummary>>>();
+  const [tokenVisible, setTokenVisible] = useState(false);
 
-  const refresh = () => void loadDetails().then(setDetails);
+  const refresh = () => void getSyncSummary().then(setDetails);
   useEffect(() => {
     refresh();
     return subscribeToSyncChanges(refresh);
@@ -97,11 +64,6 @@ export function SyncStatusPage() {
           <strong>{details?.pendingCount ?? 0}</strong>
           <small>{t("sync.pendingHint")}</small>
         </article>
-        <article className="panel sync-summary-card">
-          <span>{t("sync.conflicts")}</span>
-          <strong>{visibleConflicts.length}</strong>
-          <small>{t("sync.conflictHint")}</small>
-        </article>
       </div>
 
       {details?.state.lastError && (
@@ -136,64 +98,29 @@ export function SyncStatusPage() {
             value={configuration.apiUrl}
           />
         </label>
-        <label>
-          <span>{t("sync.token")}</span>
+        <div className="sync-secret-field">
+          <div className="sync-field-label">
+            <span>{t("sync.token")}</span>
+            <button
+              className="button-link"
+              onClick={() => setTokenVisible((visible) => !visible)}
+              type="button"
+            >
+              {t(tokenVisible ? "sync.hideToken" : "sync.showToken")}
+            </button>
+          </div>
           <input
+            aria-label={t("sync.token")}
             onChange={(event) =>
               setConfiguration((current) => ({ ...current, token: event.target.value }))
             }
-            type="password"
+            type={tokenVisible ? "text" : "password"}
             value={configuration.token}
           />
-        </label>
+        </div>
         <button className="button" onClick={() => void saveAndSync()} type="button">
           {t("sync.saveAndTest")}
         </button>
-      </section>
-
-      <section className="panel sync-conflicts">
-        <div>
-          <h2>{t("sync.conflictTitle")}</h2>
-          <p>{t("sync.conflictDescription")}</p>
-        </div>
-        {visibleConflicts.length === 0 ? (
-          <p className="empty-copy">{t("sync.noConflicts")}</p>
-        ) : (
-          <div className="sync-conflict-list">
-            {visibleConflicts.map((conflict) => (
-              <article key={conflict.id}>
-                <div>
-                  <strong>
-                    {t(`sync.entity.${conflict.entityType}`)} · {conflict.entityId}
-                  </strong>
-                  <span>
-                    {t(`sync.errorCode.${conflict.code}`, {
-                      defaultValue: conflict.code,
-                    })}
-                  </span>
-                  <small>{new Date(conflict.createdAt).toLocaleString()}</small>
-                </div>
-                <div className="sync-conflict-actions">
-                  <button
-                    className="button button-quiet"
-                    disabled={conflict.serverPayload === undefined}
-                    onClick={() => void resolveSyncConflict(conflict.id, "USE_SERVER")}
-                    type="button"
-                  >
-                    {t("sync.useServer")}
-                  </button>
-                  <button
-                    className="button"
-                    onClick={() => void resolveSyncConflict(conflict.id, "KEEP_LOCAL")}
-                    type="button"
-                  >
-                    {t("sync.keepLocal")}
-                  </button>
-                </div>
-              </article>
-            ))}
-          </div>
-        )}
       </section>
     </section>
   );

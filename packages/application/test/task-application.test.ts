@@ -22,6 +22,7 @@ import {
   ProjectApplicationService,
   ReviewApplicationService,
   TaskApplicationService,
+  TaskNotActionableForTodayError,
   WipLimitExceededError,
 } from "../src";
 
@@ -313,6 +314,36 @@ describe("task application service", () => {
     expect(state.events.map((event) => event.type)).toContain("ADDED_TO_DAILY_PLAN");
   });
 
+  it("keeps waiting tasks out of today's actionable plan", async () => {
+    const state = createMemoryDatabase();
+    const service = createService(state.database);
+    const task = await service.capture({ title: "等待客户确认" });
+    await service.transition(task.id, "WAITING");
+
+    await expect(service.addToToday(task.id, "2026-07-24", "Asia/Shanghai")).rejects.toBeInstanceOf(
+      TaskNotActionableForTodayError,
+    );
+  });
+
+  it("shows a planned task in only one today section as its status changes", async () => {
+    const state = createMemoryDatabase();
+    const service = createService(state.database);
+    const task = await service.capture({ title: "推进发布准备" });
+    await service.transition(task.id, "READY");
+    await service.addToToday(task.id, "2026-07-24", "Asia/Shanghai");
+
+    await service.transition(task.id, "DOING");
+    const doingView = await service.getToday("2026-07-24");
+    expect(doingView.focus).toHaveLength(0);
+    expect(doingView.doing.map((candidate) => candidate.id)).toEqual([task.id]);
+
+    await service.transition(task.id, "WAITING");
+    const waitingView = await service.getToday("2026-07-24");
+    expect(waitingView.focus).toHaveLength(0);
+    expect(waitingView.later).toHaveLength(0);
+    expect(waitingView.doing).toHaveLength(0);
+  });
+
   it("rejects a fourth doing task until the user explicitly overrides the limit", async () => {
     const state = createMemoryDatabase();
     const service = createService(state.database);
@@ -411,6 +442,7 @@ describe("task application service", () => {
     const state = createMemoryDatabase();
     const service = createService(state.database);
     const task = await service.capture({ title: "只属于今天" });
+    await service.transition(task.id, "READY");
     await service.addToToday(task.id, "2026-07-24", "Asia/Shanghai");
 
     const tomorrow = await service.getToday("2026-07-25");
@@ -463,6 +495,23 @@ describe("task application service", () => {
       completedPercent: 33,
     });
     expect(state.events.map((event) => event.type)).toContain("PROJECT_FOCUS_CLEARED");
+  });
+
+  it("clears project focus when the next step becomes externally blocked", async () => {
+    const state = createMemoryDatabase();
+    const tasks = createService(state.database);
+    const projects = createProjectService(state.database);
+    const project = await projects.create({ name: "等待发布审批" });
+    const focus = await tasks.capture({ title: "提交应用商店审核", projectId: project.id });
+    await tasks.transition(focus.id, "READY");
+    await projects.setFocusTask(project.id, focus.id);
+
+    await tasks.transition(focus.id, "WAITING");
+
+    expect(state.projects.get(project.id)?.focusTaskId).toBeUndefined();
+    await expect(projects.setFocusTask(project.id, focus.id)).rejects.toThrow(
+      "Focus task must be an actionable task in this project",
+    );
   });
 
   it("places active projects without a focus into the decision queue", async () => {

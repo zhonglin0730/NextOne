@@ -151,6 +151,13 @@ export class WipLimitExceededError extends Error {
   }
 }
 
+export class TaskNotActionableForTodayError extends Error {
+  constructor(public readonly status: TaskStatus) {
+    super(`Only READY or DOING tasks can be added to today; received ${status}`);
+    this.name = "TaskNotActionableForTodayError";
+  }
+}
+
 function createOutboxMutation(
   input: {
     userId: string;
@@ -502,7 +509,10 @@ export class TaskApplicationService {
       const events = wipOverrideEvent === undefined ? [event] : [wipOverrideEvent, event];
       let projectWithoutFocus: Project | undefined;
 
-      if ((to === "COMPLETED" || to === "CANCELED") && current.projectId !== undefined) {
+      if (
+        (to === "WAITING" || to === "COMPLETED" || to === "CANCELED") &&
+        current.projectId !== undefined
+      ) {
         const project = await transaction.projects.findById(current.projectId);
         if (project?.focusTaskId === current.id) {
           projectWithoutFocus = withoutProjectFocus(project, occurredAt);
@@ -567,14 +577,39 @@ export class TaskApplicationService {
           toVisibility: to,
         },
       };
+      const events = [event];
+      let projectWithoutFocus: Project | undefined;
+
+      if (to !== "ACTIVE" && current.projectId !== undefined) {
+        const project = await transaction.projects.findById(current.projectId);
+        if (project?.focusTaskId === current.id) {
+          projectWithoutFocus = withoutProjectFocus(project, occurredAt);
+          events.push({
+            id: this.dependencies.generateId(),
+            userId: task.userId,
+            taskId: task.id,
+            type: "PROJECT_FOCUS_CLEARED",
+            occurredAt,
+            metadata: {},
+          });
+        }
+      }
 
       await persistTaskMutation(
         transaction,
         task,
-        [event],
+        events,
         occurredAt,
         this.dependencies.generateId,
       );
+      if (projectWithoutFocus !== undefined) {
+        await persistProjectMutation(
+          transaction,
+          projectWithoutFocus,
+          occurredAt,
+          this.dependencies.generateId,
+        );
+      }
       return task;
     });
   }
@@ -701,6 +736,10 @@ export class TaskApplicationService {
 
       if (task === undefined) {
         throw new Error("Task not found");
+      }
+
+      if (task.status !== "READY" && task.status !== "DOING") {
+        throw new TaskNotActionableForTodayError(task.status);
       }
 
       const occurredAt = this.dependencies.now();
@@ -839,8 +878,12 @@ export class TaskApplicationService {
 
       return {
         plan,
-        focus: todayTasks.filter(({ item }) => item.section === "FOCUS"),
-        later: todayTasks.filter(({ item }) => item.section === "LATER"),
+        focus: todayTasks.filter(
+          ({ item, task }) => item.section === "FOCUS" && task.status === "READY",
+        ),
+        later: todayTasks.filter(
+          ({ item, task }) => item.section === "LATER" && task.status === "READY",
+        ),
         doing,
       };
     });
@@ -1215,8 +1258,8 @@ export class ProjectApplicationService {
         if (
           nextFocus === undefined ||
           nextFocus.projectId !== project.id ||
-          !isOpenTask(nextFocus) ||
-          nextFocus.status === "INBOX"
+          nextFocus.visibility !== "ACTIVE" ||
+          (nextFocus.status !== "READY" && nextFocus.status !== "DOING")
         ) {
           throw new Error("Focus task must be an actionable task in this project");
         }

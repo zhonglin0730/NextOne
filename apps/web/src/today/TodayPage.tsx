@@ -30,7 +30,7 @@ function candidateRank(task: Task): number {
 
 function sortKickoffCandidates(tasks: readonly Task[]): readonly Task[] {
   return [...new Map(tasks.map((task) => [task.id, task])).values()]
-    .filter((task) => task.status !== "COMPLETED" && task.status !== "CANCELED")
+    .filter((task) => task.status === "INBOX" || task.status === "READY")
     .sort(
       (left, right) =>
         candidateRank(left) - candidateRank(right) ||
@@ -97,7 +97,7 @@ function TodayTaskCard({
             {t("inbox.clarify")}
           </button>
         ) : null}
-        {task.status === "READY" || task.status === "WAITING" ? (
+        {task.status === "READY" ? (
           <button
             className="button button-primary button-small"
             onClick={() => onTransition(task, "DOING")}
@@ -271,7 +271,16 @@ export function TodayPage() {
   const startDay = async (tasks: readonly Task[]) => {
     try {
       for (const task of tasks) {
-        await taskApplicationService.addToToday(task.id, localDate, getTimeZone(), "FOCUS");
+        const actionableTask =
+          task.status === "INBOX"
+            ? await taskApplicationService.transition(task.id, "READY")
+            : task;
+        await taskApplicationService.addToToday(
+          actionableTask.id,
+          localDate,
+          getTimeZone(),
+          "FOCUS",
+        );
       }
       localStorage.setItem(kickoffStorageKey, "started");
       setKickoffOpen(false);
