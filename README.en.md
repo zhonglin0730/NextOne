@@ -2,14 +2,33 @@
 
 [简体中文](README.md) | [English](README.en.md)
 
-NextOne is a personal action system that proactively helps users make trade-offs.
+NextOne is a personal project progression system centered on project outcomes
+and one clear next action.
 
-The repository has completed V0.1 M9, Daily Loop. In addition to the complete web
-action and offline-sync workflow, it now includes a native Expo / React Native
-client with transactional SQLite storage, quick capture, Today, Inbox, task
-decisions, opportunistic automatic sync, and SecureStore credentials. The web
-client now also provides a morning kickoff, daily capacity feedback, and Zen
-single-task mode. Product and development documentation is available in `docs/`.
+It is neither a traditional to-do list nor simply a smaller Trello. NextOne
+starts with the outcome a project should achieve. Its project cockpit makes
+progress, blockers, and the current focus visible; the board organizes the
+execution flow; Today holds a small set of daily commitments; and reviews keep
+projects aligned over time. WIP limits, missing-focus alerts, and waiting-item
+prompts still help users make trade-offs, but they serve project progression
+rather than define the product as a task-decision tool.
+
+The repository now provides a complete personal project progression workflow
+for the web with offline sync, plus a native Expo / React Native client.
+Implemented capabilities include the project cockpit, visual execution
+progress, project focus, execution board, quick capture, Today, Inbox, morning
+planning, Daily Close, basic reviews, Zen single-task mode, IndexedDB / SQLite
+local storage, opportunistic automatic sync, and SecureStore credentials.
+Product and development documentation is available in `docs/`.
+
+## Core Workflow
+
+1. Create a project and state the outcome it should achieve.
+2. Choose its one clear next action and organize work across Ready, Doing,
+   Waiting, and Someday on the board.
+3. Pull only a few project tasks into Today and keep work in progress limited.
+4. Complete, pause, or mark work as waiting so progress and blockers stay true.
+5. Use Daily Close and periodic reviews to clear drift and choose the next step.
 
 ## Local Requirements
 
@@ -64,7 +83,8 @@ For environment variable examples, see `deploy/compose/.env.example` and
 ## Current Scope
 
 - The web engineering baseline, local task kernel, Today page, execution board,
-  project focus workflow, Daily Close, and Basic Review are implemented.
+  project cockpit, visual project progress, project focus workflow, Daily Close,
+  and Basic Review are implemented.
 - M6 connects browser IndexedDB Outbox records to the server and adds sync
   status and conflict resolution at `/settings/sync`.
 - M7 adds `/settings/general` and `/settings/data`. Import replacement creates

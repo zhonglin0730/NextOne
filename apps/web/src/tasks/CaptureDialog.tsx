@@ -2,6 +2,7 @@ import type { EnergyLevel, Project } from "@nextone/domain";
 import { useEffect, useState, type FormEvent, type KeyboardEvent } from "react";
 import { useTranslation } from "react-i18next";
 
+import { getLocalDate, getTimeZone } from "../today/date";
 import {
   notifyTasksChanged,
   projectApplicationService,
@@ -9,11 +10,14 @@ import {
 } from "./taskService";
 
 interface CaptureDialogProps {
+  defaultDestination: CaptureDestination;
   open: boolean;
   onClose: () => void;
 }
 
-export function CaptureDialog({ open, onClose }: CaptureDialogProps) {
+type CaptureDestination = "INBOX" | "TODAY";
+
+export function CaptureDialog({ defaultDestination, open, onClose }: CaptureDialogProps) {
   const { t } = useTranslation();
   const [title, setTitle] = useState("");
   const [note, setNote] = useState("");
@@ -24,6 +28,8 @@ export function CaptureDialog({ open, onClose }: CaptureDialogProps) {
   const [energyLevel, setEnergyLevel] = useState<EnergyLevel | "">("");
   const [projects, setProjects] = useState<readonly Project[]>([]);
   const [submitting, setSubmitting] = useState(false);
+  const [destination, setDestination] = useState<CaptureDestination>(defaultDestination);
+  const [capturedTaskId, setCapturedTaskId] = useState<string>();
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -35,10 +41,12 @@ export function CaptureDialog({ open, onClose }: CaptureDialogProps) {
       setReviewAt("");
       setEstimateMinutes("");
       setEnergyLevel("");
+      setDestination(defaultDestination);
+      setCapturedTaskId(undefined);
       setError("");
       void projectApplicationService.listProjects("ACTIVE").then(setProjects);
     }
-  }, [open]);
+  }, [defaultDestination, open]);
 
   if (!open) {
     return null;
@@ -51,23 +59,35 @@ export function CaptureDialog({ open, onClose }: CaptureDialogProps) {
 
     setSubmitting(true);
     setError("");
+    let taskWasCaptured = capturedTaskId !== undefined;
 
     try {
-      await taskApplicationService.capture({
-        title,
-        ...(note.trim().length === 0 ? {} : { note }),
-        ...(projectId.length === 0 ? {} : { projectId }),
-        ...(deadlineAt.length === 0 ? {} : { deadlineAt }),
-        ...(reviewAt.length === 0 ? {} : { reviewAt }),
-        ...(estimateMinutes.length === 0
-          ? {}
-          : { estimateMinutes: Number.parseInt(estimateMinutes, 10) }),
-        ...(energyLevel === "" ? {} : { energyLevel }),
-      });
+      let taskId = capturedTaskId;
+      if (taskId === undefined) {
+        const task = await taskApplicationService.capture({
+          title,
+          ...(note.trim().length === 0 ? {} : { note }),
+          ...(projectId.length === 0 ? {} : { projectId }),
+          ...(deadlineAt.length === 0 ? {} : { deadlineAt }),
+          ...(reviewAt.length === 0 ? {} : { reviewAt }),
+          ...(estimateMinutes.length === 0
+            ? {}
+            : { estimateMinutes: Number.parseInt(estimateMinutes, 10) }),
+          ...(energyLevel === "" ? {} : { energyLevel }),
+        });
+        taskId = task.id;
+        taskWasCaptured = true;
+        setCapturedTaskId(task.id);
+      }
+      if (destination === "TODAY") {
+        await taskApplicationService.addToToday(taskId, getLocalDate(), getTimeZone());
+      }
       notifyTasksChanged();
       onClose();
     } catch {
-      setError(t("common.error"));
+      setError(
+        taskWasCaptured && destination === "TODAY" ? t("capture.todayFallback") : t("common.error"),
+      );
     } finally {
       setSubmitting(false);
     }
@@ -95,7 +115,9 @@ export function CaptureDialog({ open, onClose }: CaptureDialogProps) {
         onMouseDown={(event) => event.stopPropagation()}
       >
         <header className="dialog-header">
-          <h2 id="capture-title">{t("capture.title")}</h2>
+          <h2 id="capture-title">
+            {t(destination === "TODAY" ? "capture.todayTitle" : "capture.title")}
+          </h2>
           <button
             aria-label={t("common.close")}
             className="icon-button"
@@ -107,6 +129,25 @@ export function CaptureDialog({ open, onClose }: CaptureDialogProps) {
         </header>
 
         <form onSubmit={handleSubmit}>
+          <fieldset className="capture-destination">
+            <legend>{t("capture.destination")}</legend>
+            <label>
+              <input
+                checked={destination === "TODAY"}
+                onChange={() => setDestination("TODAY")}
+                type="radio"
+              />
+              <span>{t("capture.destinationToday")}</span>
+            </label>
+            <label>
+              <input
+                checked={destination === "INBOX"}
+                onChange={() => setDestination("INBOX")}
+                type="radio"
+              />
+              <span>{t("capture.destinationInbox")}</span>
+            </label>
+          </fieldset>
           <textarea
             autoFocus
             className="capture-title-input"
@@ -116,7 +157,9 @@ export function CaptureDialog({ open, onClose }: CaptureDialogProps) {
             rows={3}
             value={title}
           />
-          <p className="field-hint">{t("capture.hint")}</p>
+          <p className="field-hint">
+            {t(destination === "TODAY" ? "capture.todayHint" : "capture.hint")}
+          </p>
 
           <details className="capture-details">
             <summary>{t("capture.details")}</summary>
@@ -192,7 +235,9 @@ export function CaptureDialog({ open, onClose }: CaptureDialogProps) {
               disabled={title.trim().length === 0 || submitting}
               type="submit"
             >
-              {submitting ? t("common.saving") : t("capture.submit")}
+              {submitting
+                ? t("common.saving")
+                : t(destination === "TODAY" ? "capture.submitToday" : "capture.submit")}
             </button>
           </footer>
         </form>

@@ -250,6 +250,30 @@ describe("task application service", () => {
     expect(state.outbox[0]?.entityId).toBe(task.id);
   });
 
+  it("persists edited task details and appends an outbox mutation", async () => {
+    const state = createMemoryDatabase();
+    const service = createService(state.database);
+    const task = await service.capture({ title: "旧标题" });
+
+    const updated = await service.updateDetails(task.id, {
+      title: "明确的下一步",
+      note: "保存后的备注",
+      projectId: null,
+      deadlineAt: "2026-07-31",
+      reviewAt: null,
+      estimateMinutes: 30,
+      energyLevel: "MEDIUM",
+      waitingFor: null,
+    });
+
+    expect(updated.title).toBe("明确的下一步");
+    expect(updated.note).toBe("保存后的备注");
+    expect(updated.deadlineAt).toBe("2026-07-31");
+    expect(updated.estimateMinutes).toBe(30);
+    expect(state.tasks.get(task.id)).toEqual(updated);
+    expect(state.outbox).toHaveLength(2);
+  });
+
   it("keeps a canceled task and records the decision", async () => {
     const state = createMemoryDatabase();
     const service = createService(state.database);
@@ -430,6 +454,14 @@ describe("task application service", () => {
     expect(detail?.overview.needsFocusDecision).toBe(true);
     expect(detail?.nextCandidates.map((task) => task.id)).toEqual([next.id]);
     expect(detail?.waiting.map((task) => task.id)).toEqual([waiting.id]);
+    expect(detail?.overview.progress).toEqual({
+      ready: 1,
+      doing: 0,
+      waiting: 1,
+      completed: 1,
+      total: 3,
+      completedPercent: 33,
+    });
     expect(state.events.map((event) => event.type)).toContain("PROJECT_FOCUS_CLEARED");
   });
 
@@ -443,6 +475,14 @@ describe("task application service", () => {
     expect(overview).toHaveLength(1);
     expect(overview[0]?.project.id).toBe(project.id);
     expect(overview[0]?.needsFocusDecision).toBe(true);
+    expect(overview[0]?.progress).toEqual({
+      ready: 0,
+      doing: 0,
+      waiting: 0,
+      completed: 0,
+      total: 0,
+      completedPercent: 0,
+    });
   });
 
   it("records an explicit review and keeps the task out of the stale queue", async () => {

@@ -80,11 +80,21 @@ export interface CreateProjectInput {
 export interface ProjectOverview {
   project: Project;
   focusTask: Task | undefined;
+  progress: ProjectProgress;
   waitingCount: number;
   nextCandidateCount: number;
   completedThisWeek: number;
   lastProgressAt: string | undefined;
   needsFocusDecision: boolean;
+}
+
+export interface ProjectProgress {
+  ready: number;
+  doing: number;
+  waiting: number;
+  completed: number;
+  total: number;
+  completedPercent: number;
 }
 
 export interface ProjectActivity {
@@ -1046,6 +1056,25 @@ function completedSince(tasks: readonly Task[], weekStartsAt: string): readonly 
     .sort((left, right) => (right.completedAt ?? "").localeCompare(left.completedAt ?? ""));
 }
 
+function createProjectProgress(tasks: readonly Task[]): ProjectProgress {
+  const ready = tasks.filter(
+    (task) => task.status === "READY" && task.visibility !== "SOMEDAY",
+  ).length;
+  const doing = tasks.filter((task) => task.status === "DOING").length;
+  const waiting = tasks.filter((task) => task.status === "WAITING").length;
+  const completed = tasks.filter((task) => task.status === "COMPLETED").length;
+  const total = ready + doing + waiting + completed;
+
+  return {
+    ready,
+    doing,
+    waiting,
+    completed,
+    total,
+    completedPercent: total === 0 ? 0 : Math.round((completed / total) * 100),
+  };
+}
+
 async function projectActivity(
   transaction: StorageTransaction,
   tasks: readonly Task[],
@@ -1077,6 +1106,7 @@ function createProjectOverview(
   return {
     project,
     focusTask,
+    progress: createProjectProgress(tasks),
     waitingCount: tasks.filter((task) => task.status === "WAITING").length,
     nextCandidateCount: candidateTasks(tasks, focusTask?.id).length,
     completedThisWeek: completedSince(tasks, weekStartsAt).length,

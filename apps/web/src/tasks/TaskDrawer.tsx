@@ -35,11 +35,21 @@ export function TaskDrawer({ task, onClose, onTaskChanged }: TaskDrawerProps) {
   const [waitingFor, setWaitingFor] = useState(task.waitingFor ?? "");
   const [events, setEvents] = useState<readonly TaskEvent[]>([]);
   const [projects, setProjects] = useState<readonly Project[]>([]);
+  const [addedToday, setAddedToday] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [dirty, setDirty] = useState(false);
+  const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
 
   const loadEvents = async () => {
     setEvents(await taskApplicationService.listTaskEvents(task.id));
+  };
+
+  const loadTodayMembership = async () => {
+    const today = await taskApplicationService.getToday(getLocalDate());
+    setAddedToday(
+      [...today.focus, ...today.later].some(({ task: todayTask }) => todayTask.id === task.id),
+    );
   };
 
   useEffect(() => {
@@ -52,8 +62,19 @@ export function TaskDrawer({ task, onClose, onTaskChanged }: TaskDrawerProps) {
     setEnergyLevel(task.energyLevel ?? "");
     setWaitingFor(task.waitingFor ?? "");
     void loadEvents();
+    void loadTodayMembership();
     void projectApplicationService.listProjects("ACTIVE").then(setProjects);
   }, [task]);
+
+  useEffect(() => {
+    setDirty(false);
+    setSaved(false);
+  }, [task.id]);
+
+  const markDirty = () => {
+    setDirty(true);
+    setSaved(false);
+  };
 
   const save = async (event: FormEvent) => {
     event.preventDefault();
@@ -74,6 +95,8 @@ export function TaskDrawer({ task, onClose, onTaskChanged }: TaskDrawerProps) {
       onTaskChanged(updated);
       notifyTasksChanged();
       await loadEvents();
+      setDirty(false);
+      setSaved(true);
     } catch {
       setError(t("common.error"));
     } finally {
@@ -87,6 +110,7 @@ export function TaskDrawer({ task, onClose, onTaskChanged }: TaskDrawerProps) {
     }
 
     setSubmitting(true);
+    setSaved(false);
     setError("");
 
     try {
@@ -98,6 +122,7 @@ export function TaskDrawer({ task, onClose, onTaskChanged }: TaskDrawerProps) {
       }
       onTaskChanged(updated);
       await loadEvents();
+      setDirty(false);
     } catch {
       setError(t("common.error"));
     } finally {
@@ -106,11 +131,17 @@ export function TaskDrawer({ task, onClose, onTaskChanged }: TaskDrawerProps) {
   };
 
   const addToday = async () => {
+    if (addedToday) {
+      return;
+    }
+
     setSubmitting(true);
+    setSaved(false);
     setError("");
 
     try {
       await taskApplicationService.addToToday(task.id, getLocalDate(), getTimeZone());
+      setAddedToday(true);
       notifyTasksChanged();
       await loadEvents();
     } catch {
@@ -157,11 +188,11 @@ export function TaskDrawer({ task, onClose, onTaskChanged }: TaskDrawerProps) {
           <div className="status-actions">
             <button
               className="button button-outline"
-              disabled={submitting}
+              disabled={submitting || addedToday}
               onClick={() => void addToday()}
               type="button"
             >
-              {t("task.addToday")}
+              {addedToday ? t("task.addedToday") : t("task.addToday")}
             </button>
             {availableTransitions
               .filter((status) => status !== "CANCELED")
@@ -182,15 +213,35 @@ export function TaskDrawer({ task, onClose, onTaskChanged }: TaskDrawerProps) {
         <form className="task-form" onSubmit={save}>
           <label className="form-field details-span">
             <span>{t("task.title")}</span>
-            <input onChange={(event) => setTitle(event.target.value)} required value={title} />
+            <input
+              onChange={(event) => {
+                setTitle(event.target.value);
+                markDirty();
+              }}
+              required
+              value={title}
+            />
           </label>
           <label className="form-field details-span">
             <span>{t("task.note")}</span>
-            <textarea onChange={(event) => setNote(event.target.value)} rows={4} value={note} />
+            <textarea
+              onChange={(event) => {
+                setNote(event.target.value);
+                markDirty();
+              }}
+              rows={4}
+              value={note}
+            />
           </label>
           <label className="form-field details-span">
             <span>{t("task.project")}</span>
-            <select onChange={(event) => setProjectId(event.target.value)} value={projectId}>
+            <select
+              onChange={(event) => {
+                setProjectId(event.target.value);
+                markDirty();
+              }}
+              value={projectId}
+            >
               <option value="">{t("project.noProject")}</option>
               {projects.map((project) => (
                 <option key={project.id} value={project.id}>
@@ -202,7 +253,10 @@ export function TaskDrawer({ task, onClose, onTaskChanged }: TaskDrawerProps) {
           <label className="form-field">
             <span>{t("task.deadline")}</span>
             <input
-              onChange={(event) => setDeadlineAt(event.target.value)}
+              onChange={(event) => {
+                setDeadlineAt(event.target.value);
+                markDirty();
+              }}
               type="date"
               value={deadlineAt}
             />
@@ -210,7 +264,10 @@ export function TaskDrawer({ task, onClose, onTaskChanged }: TaskDrawerProps) {
           <label className="form-field">
             <span>{t("task.reviewAt")}</span>
             <input
-              onChange={(event) => setReviewAt(event.target.value)}
+              onChange={(event) => {
+                setReviewAt(event.target.value);
+                markDirty();
+              }}
               type="date"
               value={reviewAt}
             />
@@ -219,7 +276,10 @@ export function TaskDrawer({ task, onClose, onTaskChanged }: TaskDrawerProps) {
             <span>{t("task.estimate")}</span>
             <input
               min="1"
-              onChange={(event) => setEstimateMinutes(event.target.value)}
+              onChange={(event) => {
+                setEstimateMinutes(event.target.value);
+                markDirty();
+              }}
               type="number"
               value={estimateMinutes}
             />
@@ -227,7 +287,10 @@ export function TaskDrawer({ task, onClose, onTaskChanged }: TaskDrawerProps) {
           <label className="form-field">
             <span>{t("task.energy")}</span>
             <select
-              onChange={(event) => setEnergyLevel(event.target.value as EnergyLevel | "")}
+              onChange={(event) => {
+                setEnergyLevel(event.target.value as EnergyLevel | "");
+                markDirty();
+              }}
               value={energyLevel}
             >
               <option value="">{t("capture.energyNone")}</option>
@@ -239,7 +302,13 @@ export function TaskDrawer({ task, onClose, onTaskChanged }: TaskDrawerProps) {
           {task.status === "WAITING" ? (
             <label className="form-field details-span">
               <span>{t("task.waitingFor")}</span>
-              <input onChange={(event) => setWaitingFor(event.target.value)} value={waitingFor} />
+              <input
+                onChange={(event) => {
+                  setWaitingFor(event.target.value);
+                  markDirty();
+                }}
+                value={waitingFor}
+              />
             </label>
           ) : null}
 
@@ -258,13 +327,18 @@ export function TaskDrawer({ task, onClose, onTaskChanged }: TaskDrawerProps) {
             ) : (
               <span />
             )}
-            <button
-              className="button button-primary"
-              disabled={title.trim().length === 0 || submitting}
-              type="submit"
-            >
-              {submitting ? t("common.saving") : t("common.save")}
-            </button>
+            <div className="drawer-save-actions">
+              <span aria-live="polite" className="save-status" role="status">
+                {saved ? `✓ ${t("task.saved")}` : ""}
+              </span>
+              <button
+                className="button button-primary"
+                disabled={title.trim().length === 0 || submitting || !dirty}
+                type="submit"
+              >
+                {submitting ? t("common.saving") : t("common.save")}
+              </button>
+            </div>
           </div>
         </form>
 

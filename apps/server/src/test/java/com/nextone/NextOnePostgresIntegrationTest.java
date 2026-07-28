@@ -65,9 +65,9 @@ class NextOnePostgresIntegrationTest {
         Integer migrationCount = jdbcTemplate.queryForObject("""
                 SELECT count(*)
                 FROM flyway_schema_history
-                WHERE success = true AND version IN ('1', '2', '3', '4')
+                WHERE success = true AND version IN ('1', '2', '3', '4', '5')
                 """, Integer.class);
-        assertThat(migrationCount).isEqualTo(4);
+        assertThat(migrationCount).isEqualTo(5);
 
         HttpResponse<String> response = send("GET", "/api/v1/me", null, null);
         assertThat(response.statusCode()).isEqualTo(401);
@@ -86,6 +86,38 @@ class NextOnePostgresIntegrationTest {
 
     @Test
     @Order(2)
+    void documentsEveryApplicationTableAndColumn() {
+        List<String> undocumentedTables = jdbcTemplate.queryForList("""
+                SELECT table_class.relname
+                FROM pg_catalog.pg_class table_class
+                JOIN pg_catalog.pg_namespace table_namespace
+                  ON table_namespace.oid = table_class.relnamespace
+                WHERE table_namespace.nspname = 'public'
+                  AND table_class.relkind = 'r'
+                  AND obj_description(table_class.oid, 'pg_class') IS NULL
+                ORDER BY table_class.relname
+                """, String.class);
+        assertThat(undocumentedTables).isEmpty();
+
+        List<String> undocumentedColumns = jdbcTemplate.queryForList("""
+                SELECT table_class.relname || '.' || table_attribute.attname
+                FROM pg_catalog.pg_class table_class
+                JOIN pg_catalog.pg_namespace table_namespace
+                  ON table_namespace.oid = table_class.relnamespace
+                JOIN pg_catalog.pg_attribute table_attribute
+                  ON table_attribute.attrelid = table_class.oid
+                WHERE table_namespace.nspname = 'public'
+                  AND table_class.relkind = 'r'
+                  AND table_attribute.attnum > 0
+                  AND NOT table_attribute.attisdropped
+                  AND col_description(table_class.oid, table_attribute.attnum) IS NULL
+                ORDER BY table_class.relname, table_attribute.attnum
+                """, String.class);
+        assertThat(undocumentedColumns).isEmpty();
+    }
+
+    @Test
+    @Order(3)
     void upgradesAnExistingV1SchemaToTheLatestVersion() {
         jdbcTemplate.execute("CREATE SCHEMA existing_v1");
         Flyway.configure()
@@ -131,10 +163,14 @@ class NextOnePostgresIntegrationTest {
                   AND table_name = 'account_deletion_request'
                 """, Integer.class);
         assertThat(deletionRequestTableAfterUpgrade).isEqualTo(1);
+        String upgradedTaskTableComment = jdbcTemplate.queryForObject("""
+                SELECT obj_description('existing_v1.task'::regclass, 'pg_class')
+                """, String.class);
+        assertThat(upgradedTaskTableComment).contains("行动任务主表");
     }
 
     @Test
-    @Order(3)
+    @Order(4)
     void persistsTasksRevalidatesTransitionsAndIsolatesUsers() throws Exception {
         HttpResponse<String> created = send(
                 "POST",
@@ -221,7 +257,7 @@ class NextOnePostgresIntegrationTest {
     }
 
     @Test
-    @Order(4)
+    @Order(5)
     void revalidatesWipDailyFocusAndProjectFocusRules() throws Exception {
         List<String> taskIds = new ArrayList<>();
         for (int index = 0; index < 4; index++) {
@@ -281,7 +317,7 @@ class NextOnePostgresIntegrationTest {
     }
 
     @Test
-    @Order(5)
+    @Order(6)
     void synchronizesIdempotentlyMergesCompletionAndReportsDeleteConflicts() throws Exception {
         String taskId = "sync-task";
         String createMutation = mutationJson(
@@ -365,7 +401,7 @@ class NextOnePostgresIntegrationTest {
     }
 
     @Test
-    @Order(6)
+    @Order(7)
     void createsAProtectedDeletionRequestWithoutDeletingAccountData() throws Exception {
         HttpResponse<String> first = send(
                 "POST",

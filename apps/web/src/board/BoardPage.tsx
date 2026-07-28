@@ -1,12 +1,15 @@
 import { WipLimitExceededError, type BoardColumn } from "@nextone/application";
-import type { Task, TaskStatus } from "@nextone/domain";
+import type { Project, Task, TaskStatus } from "@nextone/domain";
 import { useCallback, useEffect, useMemo, useState, type DragEvent } from "react";
 import { useTranslation } from "react-i18next";
+import { Link, useParams } from "react-router";
 
+import { loadActionRules, preferencesChangedEvent } from "../settings/preferences";
 import { TaskDrawer } from "../tasks/TaskDrawer";
 import { transitionWithWipConfirmation } from "../tasks/taskActions";
 import {
   notifyTasksChanged,
+  projectApplicationService,
   taskApplicationService,
   tasksChangedEvent,
 } from "../tasks/taskService";
@@ -16,30 +19,41 @@ const columns: readonly BoardColumn[] = ["READY", "DOING", "WAITING", "SOMEDAY"]
 
 export function BoardPage() {
   const { t } = useTranslation();
+  const { projectId } = useParams();
   const [tasks, setTasks] = useState<readonly Task[]>([]);
+  const [project, setProject] = useState<Project>();
   const [selectedTask, setSelectedTask] = useState<Task | undefined>();
   const [todayTaskIds, setTodayTaskIds] = useState<ReadonlySet<string>>(new Set());
+  const [wipLimit, setWipLimit] = useState(3);
   const [error, setError] = useState("");
   const localDate = useMemo(() => getLocalDate(), []);
 
   const load = useCallback(async () => {
     try {
-      const [boardTasks, today] = await Promise.all([
+      const [boardTasks, today, projects, rules] = await Promise.all([
         taskApplicationService.listBoardTasks(),
         taskApplicationService.getToday(localDate),
+        projectId === undefined ? Promise.resolve([]) : projectApplicationService.listProjects(),
+        loadActionRules(),
       ]);
       setTasks(boardTasks);
+      setProject(projects.find((candidate) => candidate.id === projectId));
       setTodayTaskIds(new Set([...today.focus, ...today.later].map(({ task }) => task.id)));
+      setWipLimit(rules.wipLimit);
       setError("");
     } catch {
       setError(t("common.error"));
     }
-  }, [localDate, t]);
+  }, [localDate, projectId, t]);
 
   useEffect(() => {
     void load();
     window.addEventListener(tasksChangedEvent, load);
-    return () => window.removeEventListener(tasksChangedEvent, load);
+    window.addEventListener(preferencesChangedEvent, load);
+    return () => {
+      window.removeEventListener(tasksChangedEvent, load);
+      window.removeEventListener(preferencesChangedEvent, load);
+    };
   }, [load]);
 
   const confirmOverride = (limit: number) =>
@@ -95,8 +109,11 @@ export function BoardPage() {
     }
   };
 
+  const visibleTasks =
+    projectId === undefined ? tasks : tasks.filter((task) => task.projectId === projectId);
+
   const tasksForColumn = (column: BoardColumn) =>
-    tasks.filter((task) =>
+    visibleTasks.filter((task) =>
       column === "SOMEDAY"
         ? task.visibility === "SOMEDAY"
         : task.visibility !== "SOMEDAY" && task.status === column,
@@ -115,17 +132,41 @@ export function BoardPage() {
     }
   };
 
-  const doingCount = tasksForColumn("DOING").length;
+  const globalDoingCount = tasks.filter(
+    (task) => task.visibility !== "SOMEDAY" && task.status === "DOING",
+  ).length;
+  const projectDoingCount = visibleTasks.filter(
+    (task) => task.visibility !== "SOMEDAY" && task.status === "DOING",
+  ).length;
 
   return (
     <section className="page board-page" aria-labelledby="board-title">
       <header className="page-header">
         <div>
-          <p className="eyebrow">{t("app.tagline")}</p>
-          <h1 id="board-title">{t("board.title")}</h1>
-          <p>{t("board.description")}</p>
+          {projectId === undefined ? (
+            <p className="eyebrow">{t("board.secondaryEyebrow")}</p>
+          ) : (
+            <Link className="project-back-link board-project-back" to={`/projects/${projectId}`}>
+              ← {t("project.back")}
+            </Link>
+          )}
+          <h1 id="board-title">
+            {project === undefined
+              ? t("board.title")
+              : t("board.projectTitle", { name: project.name })}
+          </h1>
+          <p>{project === undefined ? t("board.description") : t("board.projectDescription")}</p>
         </div>
-        <span className="count-pill">{t("board.wip", { count: doingCount, limit: 3 })}</span>
+        <div className="board-wip-summary">
+          {projectId === undefined ? null : (
+            <span className="count-pill">
+              {t("board.projectDoing", { count: projectDoingCount })}
+            </span>
+          )}
+          <span className="count-pill count-pill-muted">
+            {t("board.globalWip", { count: globalDoingCount, limit: wipLimit })}
+          </span>
+        </div>
       </header>
 
       {error.length > 0 ? <p className="page-error">{error}</p> : null}

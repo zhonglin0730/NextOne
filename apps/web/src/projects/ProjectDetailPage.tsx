@@ -13,6 +13,7 @@ import {
   tasksChangedEvent,
 } from "../tasks/taskService";
 import { getLocalDate, getTimeZone, getWeekStartsAt } from "../today/date";
+import { ProjectProgress } from "./ProjectProgress";
 
 interface ProjectTaskRowProps {
   task: Task;
@@ -43,8 +44,11 @@ export function ProjectDetailPage() {
   const { i18n, t } = useTranslation();
   const { projectId } = useParams();
   const weekStartsAt = useMemo(() => getWeekStartsAt(), []);
+  const localDate = useMemo(() => getLocalDate(), []);
   const [detail, setDetail] = useState<ProjectDetail | undefined>();
   const [selectedTask, setSelectedTask] = useState<Task | undefined>();
+  const [todayTaskIds, setTodayTaskIds] = useState<ReadonlySet<string>>(new Set());
+  const [addingTodayTaskId, setAddingTodayTaskId] = useState<string>();
   const [candidateTitle, setCandidateTitle] = useState("");
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -56,14 +60,19 @@ export function ProjectDetailPage() {
     }
 
     try {
-      setDetail(await projectApplicationService.getDetail(projectId, weekStartsAt));
+      const [nextDetail, today] = await Promise.all([
+        projectApplicationService.getDetail(projectId, weekStartsAt),
+        taskApplicationService.getToday(localDate),
+      ]);
+      setDetail(nextDetail);
+      setTodayTaskIds(new Set([...today.focus, ...today.later].map(({ task }) => task.id)));
       setError("");
     } catch {
       setError(t("common.error"));
     } finally {
       setLoading(false);
     }
-  }, [projectId, t, weekStartsAt]);
+  }, [localDate, projectId, t, weekStartsAt]);
 
   useEffect(() => {
     void load();
@@ -85,24 +94,40 @@ export function ProjectDetailPage() {
     }
   };
 
-  const transition = async (task: Task, status: TaskStatus) => {
+  const transition = async (task: Task, status: TaskStatus): Promise<Task | undefined> => {
     try {
-      await transitionWithWipConfirmation(task.id, status, (limit) =>
+      const updated = await transitionWithWipConfirmation(task.id, status, (limit) =>
         window.confirm(`${t("wip.title", { limit })}\n\n${t("wip.confirm")}`),
       );
       await load();
+      return updated;
     } catch {
       setError(t("common.error"));
+      return undefined;
     }
   };
 
   const addFocusToday = async (task: Task) => {
+    if (todayTaskIds.has(task.id) || addingTodayTaskId !== undefined) {
+      return;
+    }
+
+    setAddingTodayTaskId(task.id);
     try {
       await taskApplicationService.addToToday(task.id, getLocalDate(), getTimeZone());
+      setTodayTaskIds((current) => new Set(current).add(task.id));
       notifyTasksChanged();
-      await load();
     } catch {
       setError(t("common.error"));
+    } finally {
+      setAddingTodayTaskId(undefined);
+    }
+  };
+
+  const waitForFocusTask = async (task: Task) => {
+    const updated = await transition(task, "WAITING");
+    if (updated !== undefined) {
+      setSelectedTask(updated);
     }
   };
 
@@ -166,18 +191,28 @@ export function ProjectDetailPage() {
         <div>
           <p className="eyebrow">{t("project.eyebrow")}</p>
           <h1 id="project-detail-title">{overview.project.name}</h1>
-          {overview.project.note === undefined ? null : <p>{overview.project.note}</p>}
+          <div className="project-outcome">
+            <span>{t("project.outcomeLabel")}</span>
+            <p>{overview.project.note ?? t("project.outcomeEmpty")}</p>
+          </div>
         </div>
-        <span
-          className={`project-health ${
-            overview.needsFocusDecision ? "project-health-decision" : "project-health-active"
-          }`}
-        >
-          {overview.needsFocusDecision ? t("project.needsDecision") : t("project.active")}
-        </span>
+        <div className="project-detail-header-actions">
+          <span
+            className={`project-health ${
+              overview.needsFocusDecision ? "project-health-decision" : "project-health-active"
+            }`}
+          >
+            {overview.needsFocusDecision ? t("project.needsDecision") : t("project.active")}
+          </span>
+          <Link className="button button-outline" to={`/projects/${overview.project.id}/board`}>
+            {t("project.boardView")}
+          </Link>
+        </div>
       </header>
 
       {error.length > 0 ? <p className="page-error">{error}</p> : null}
+
+      <ProjectProgress progress={overview.progress} />
 
       <div className="project-detail-layout">
         <div className="project-detail-main">
@@ -185,7 +220,7 @@ export function ProjectDetailPage() {
             <header>
               <div>
                 <p className="eyebrow">{t("project.currentFocus")}</p>
-                <h2>{t("project.focusTitle")}</h2>
+                <h2>{t("project.nextStepTitle")}</h2>
               </div>
               {overview.focusTask === undefined ? (
                 <span className="project-health project-health-decision">
@@ -232,12 +267,29 @@ export function ProjectDetailPage() {
                       {t("action.DOING")}
                     </button>
                   ) : null}
+                  {overview.focusTask.status !== "WAITING" ? (
+                    <button
+                      className="button button-outline button-small"
+                      onClick={() => void waitForFocusTask(overview.focusTask!)}
+                      type="button"
+                    >
+                      {t("action.WAITING")}
+                    </button>
+                  ) : null}
                   <button
                     className="button button-outline button-small"
+                    disabled={
+                      todayTaskIds.has(overview.focusTask.id) ||
+                      addingTodayTaskId === overview.focusTask.id
+                    }
                     onClick={() => void addFocusToday(overview.focusTask!)}
                     type="button"
                   >
-                    {t("project.addToday")}
+                    {addingTodayTaskId === overview.focusTask.id
+                      ? t("project.addingToday")
+                      : todayTaskIds.has(overview.focusTask.id)
+                        ? t("project.addedToday")
+                        : t("project.addToday")}
                   </button>
                 </div>
               </div>

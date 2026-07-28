@@ -1,6 +1,6 @@
 import { type ReactNode, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { BrowserRouter, Navigate, NavLink, Route, Routes } from "react-router";
+import { BrowserRouter, Navigate, NavLink, Route, Routes, useLocation } from "react-router";
 
 import { BoardPage } from "./board/BoardPage";
 import { BrandLogo } from "./brand/BrandLogo";
@@ -19,11 +19,11 @@ import { InboxPage } from "./tasks/InboxPage";
 import { TodayPage } from "./today/TodayPage";
 
 const navigation = [
+  { key: "projects", path: "/projects" },
   { key: "today", path: "/today" },
   { key: "inbox", path: "/inbox" },
-  { key: "board", path: "/board" },
-  { key: "projects", path: "/projects" },
   { key: "review", path: "/review" },
+  { key: "board", path: "/board" },
   { key: "settings", path: "/settings/general" },
 ] as const;
 
@@ -100,7 +100,9 @@ function PlaceholderPage({ pageKey }: { pageKey: NavigationKey }) {
 
 function AppShell() {
   const { t } = useTranslation();
+  const location = useLocation();
   const [captureOpen, setCaptureOpen] = useState(false);
+  const captureForToday = location.pathname === "/today";
 
   useEffect(() => {
     const stopSync = startAutomaticSync();
@@ -134,28 +136,33 @@ function AppShell() {
           <div className="topbar-inner">
             <div className="topbar-actions">
               <SyncIndicator />
-              <button
-                aria-label={t("shell.quickCapture")}
-                className="capture-button"
-                onClick={() => setCaptureOpen(true)}
-                type="button"
-              >
-                <span aria-hidden="true" className="capture-icon">
-                  ＋
-                </span>
-                <span className="capture-label">{t("shell.quickCapture")}</span>
-              </button>
+              {location.pathname === "/inbox" ? null : (
+                <button
+                  aria-label={t(captureForToday ? "shell.addToday" : "shell.quickCapture")}
+                  className="capture-button"
+                  onClick={() => setCaptureOpen(true)}
+                  type="button"
+                >
+                  <span aria-hidden="true" className="capture-icon">
+                    ＋
+                  </span>
+                  <span className="capture-label">
+                    {t(captureForToday ? "shell.addToday" : "shell.quickCapture")}
+                  </span>
+                </button>
+              )}
             </div>
           </div>
         </header>
 
         <Routes>
-          <Route element={<Navigate replace to="/today" />} path="/" />
+          <Route element={<Navigate replace to="/projects" />} path="/" />
           <Route element={<InboxPage onOpenCapture={() => setCaptureOpen(true)} />} path="/inbox" />
           <Route element={<TodayPage />} path="/today" />
           <Route element={<BoardPage />} path="/board" />
           <Route element={<ProjectsPage />} path="/projects" />
           <Route element={<ProjectDetailPage />} path="/projects/:projectId" />
+          <Route element={<BoardPage />} path="/projects/:projectId/board" />
           <Route element={<ReviewCenterPage />} path="/review" />
           <Route element={<DailyClosePage />} path="/review/daily" />
           <Route element={<SyncStatusPage />} path="/settings/sync" />
@@ -173,11 +180,15 @@ function AppShell() {
                 path={item.path}
               />
             ))}
-          <Route element={<Navigate replace to="/today" />} path="*" />
+          <Route element={<Navigate replace to="/projects" />} path="*" />
         </Routes>
       </main>
 
-      <CaptureDialog onClose={() => setCaptureOpen(false)} open={captureOpen} />
+      <CaptureDialog
+        defaultDestination={captureForToday ? "TODAY" : "INBOX"}
+        onClose={() => setCaptureOpen(false)}
+        open={captureOpen}
+      />
     </div>
   );
 }
