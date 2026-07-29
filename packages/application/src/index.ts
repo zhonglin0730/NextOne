@@ -330,7 +330,7 @@ export class TaskApplicationService {
   async listBoardTasks(): Promise<readonly Task[]> {
     return this.dependencies.database.transaction(async (transaction) => {
       const tasks = await transaction.tasks.list({
-        statuses: ["READY", "DOING", "WAITING"],
+        statuses: ["READY", "DOING", "WAITING", "COMPLETED"],
       });
       return tasks.filter((task) => task.visibility !== "SNOOZED");
     });
@@ -649,6 +649,44 @@ export class TaskApplicationService {
     });
   }
 
+  async acknowledgeReview(taskId: string): Promise<Task> {
+    return this.dependencies.database.transaction(async (transaction) => {
+      const current = await transaction.tasks.findById(taskId);
+      if (
+        current === undefined ||
+        current.status === "COMPLETED" ||
+        current.status === "CANCELED"
+      ) {
+        throw new Error("Only an open task can be reviewed");
+      }
+
+      const occurredAt = this.dependencies.now();
+      const task: Task = {
+        ...current,
+        reviewedAt: occurredAt,
+        updatedAt: occurredAt,
+        revision: current.revision + 1,
+      };
+      const event: TaskEvent = {
+        id: this.dependencies.generateId(),
+        userId: task.userId,
+        taskId: task.id,
+        type: "REVIEWED",
+        occurredAt,
+        metadata: {},
+      };
+
+      await persistTaskMutation(
+        transaction,
+        task,
+        [event],
+        occurredAt,
+        this.dependencies.generateId,
+      );
+      return task;
+    });
+  }
+
   async setReviewDate(taskId: string, reviewAt: string): Promise<Task> {
     return this.dependencies.database.transaction(async (transaction) => {
       const current = await transaction.tasks.findById(taskId);
@@ -913,11 +951,15 @@ export class ReviewApplicationService {
       const waitingCutoff = nowValue - (rules?.waitingDays ?? 7) * 86_400_000;
       const doingCutoff = nowValue - 7 * 86_400_000;
       const deadlineCutoff = nowValue + 3 * 86_400_000;
+      const startOfDay = new Date(nowValue);
+      startOfDay.setUTCHours(0, 0, 0, 0);
+      const startOfDayValue = startOfDay.getTime();
       const tasks = await transaction.tasks.list();
       const items: ReviewQueueItem[] = [];
 
       for (const task of tasks) {
         const reasons: ReviewReason[] = [];
+        const reviewedAtValue = timeValue(task.reviewedAt);
         if (
           task.status === "READY" &&
           task.visibility === "ACTIVE" &&
@@ -927,7 +969,7 @@ export class ReviewApplicationService {
         }
         if (
           task.status === "WAITING" &&
-          (timeValue(task.waitingSince) ?? nowValue) <= waitingCutoff
+          Math.max(timeValue(task.waitingSince) ?? nowValue, reviewedAtValue ?? 0) <= waitingCutoff
         ) {
           reasons.push("WAITING_OVERDUE");
         }
@@ -942,13 +984,18 @@ export class ReviewApplicationService {
           deadlineValue !== undefined &&
           deadlineEnd !== undefined &&
           deadlineEnd >= nowValue &&
-          deadlineValue <= deadlineCutoff
+          deadlineValue <= deadlineCutoff &&
+          task.visibility === "ACTIVE" &&
+          (reviewedAtValue === undefined || reviewedAtValue < startOfDayValue)
         ) {
           reasons.push("DEADLINE_SOON");
         }
         if (
           task.reviewAt !== undefined &&
-          (timeValue(task.reviewAt) ?? Number.POSITIVE_INFINITY) <= nowValue
+          task.visibility !== "SOMEDAY" &&
+          (timeValue(task.reviewAt) ?? Number.POSITIVE_INFINITY) <= nowValue &&
+          (reviewedAtValue === undefined ||
+            reviewedAtValue < (timeValue(task.reviewAt) ?? Number.POSITIVE_INFINITY))
         ) {
           reasons.push("REVIEW_DUE");
         }

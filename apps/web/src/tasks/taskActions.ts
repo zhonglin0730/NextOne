@@ -7,10 +7,13 @@ export async function transitionWithWipConfirmation(
   taskId: string,
   status: TaskStatus,
   confirmOverride: (limit: number) => boolean,
+  notify = true,
 ): Promise<Task | undefined> {
   try {
     const task = await taskApplicationService.transition(taskId, status);
-    notifyTasksChanged();
+    if (notify) {
+      notifyTasksChanged();
+    }
     return task;
   } catch (error) {
     if (!(error instanceof WipLimitExceededError)) {
@@ -24,7 +27,9 @@ export async function transitionWithWipConfirmation(
     const task = await taskApplicationService.transition(taskId, status, {
       allowWipOverride: true,
     });
-    notifyTasksChanged();
+    if (notify) {
+      notifyTasksChanged();
+    }
     return task;
   }
 }

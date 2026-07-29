@@ -291,6 +291,9 @@ export function TaskDrawer({ task, onClose, onTaskChanged }: TaskDrawerProps) {
               type="date"
               value={reviewAt}
             />
+            <small>
+              {t(task.status === "WAITING" ? "task.followUpAtHint" : "task.reviewAtHint")}
+            </small>
           </label>
           <label className="form-field">
             <span>{t("task.estimate")}</span>

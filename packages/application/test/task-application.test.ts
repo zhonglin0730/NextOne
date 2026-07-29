@@ -301,6 +301,19 @@ describe("task application service", () => {
     expect(state.events).toHaveLength(3);
   });
 
+  it("keeps completed tasks available to the board for progress review", async () => {
+    const state = createMemoryDatabase();
+    const service = createService(state.database);
+    const task = await service.capture({ title: "完成后仍可查看" });
+    await service.transition(task.id, "READY");
+    await service.transition(task.id, "COMPLETED");
+
+    const boardTasks = await service.listBoardTasks();
+
+    expect(boardTasks.map((candidate) => candidate.id)).toContain(task.id);
+    expect(boardTasks.find((candidate) => candidate.id === task.id)?.status).toBe("COMPLETED");
+  });
+
   it("adds a task to today without changing its execution status", async () => {
     const state = createMemoryDatabase();
     const service = createService(state.database);
@@ -572,6 +585,45 @@ describe("task application service", () => {
     const item = center.items.find(({ task }) => task.id === captured.id);
 
     expect(item?.reasons).toContain("DEADLINE_SOON");
+  });
+
+  it("removes an acknowledged deadline decision from the review queue for the day", async () => {
+    const state = createMemoryDatabase();
+    const tasks = createService(state.database);
+    const review = createReviewService(state.database);
+    const captured = await tasks.capture({
+      title: "今天已决定如何处理",
+      deadlineAt: "2026-07-24",
+    });
+    await tasks.transition(captured.id, "READY");
+
+    const before = await review.getCenter("2026-07-24T12:00:00.000Z");
+    expect(before.items.map(({ task }) => task.id)).toContain(captured.id);
+
+    await tasks.acknowledgeReview(captured.id);
+    const after = await review.getCenter("2026-07-24T12:00:00.000Z");
+
+    expect(after.items.map(({ task }) => task.id)).not.toContain(captured.id);
+  });
+
+  it("keeps an acknowledged review task in today while removing its decision card", async () => {
+    const state = createMemoryDatabase();
+    const tasks = createService(state.database);
+    const review = createReviewService(state.database);
+    const captured = await tasks.capture({
+      title: "加入今天后给出明确反馈",
+      deadlineAt: "2026-07-24",
+    });
+    await tasks.transition(captured.id, "READY");
+
+    await tasks.addToToday(captured.id, "2026-07-24", "Asia/Shanghai");
+    await tasks.acknowledgeReview(captured.id);
+
+    const today = await tasks.getToday("2026-07-24");
+    const center = await review.getCenter("2026-07-24T12:00:00.000Z");
+
+    expect(today.focus.map(({ task }) => task.id)).toContain(captured.id);
+    expect(center.items.map(({ task }) => task.id)).not.toContain(captured.id);
   });
 
   it("separates unfinished and completed work during daily close", async () => {

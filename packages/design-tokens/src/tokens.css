@@ -11,10 +11,37 @@
   --nextone-color-navigation: #fbfbf8;
   --nextone-color-navigation-text: #667085;
   --nextone-color-focus: #eaf0ff;
+  --nextone-color-accent-soft: color-mix(
+    in srgb,
+    var(--nextone-color-accent) 9%,
+    var(--nextone-color-surface)
+  );
+  --nextone-color-accent-border: color-mix(
+    in srgb,
+    var(--nextone-color-accent) 32%,
+    var(--nextone-color-border)
+  );
+  --nextone-color-success: #277c55;
+  --nextone-color-success-soft: color-mix(in srgb, #359b72 11%, var(--nextone-color-surface));
+  --nextone-color-success-border: color-mix(in srgb, #359b72 30%, var(--nextone-color-border));
+  --nextone-color-warning: #a45b12;
+  --nextone-color-warning-soft: color-mix(in srgb, #c58a3a 13%, var(--nextone-color-surface));
+  --nextone-color-warning-border: color-mix(in srgb, #c58a3a 32%, var(--nextone-color-border));
   --nextone-font-sans:
     "Segoe UI Variable Text", "Segoe UI", "PingFang SC", "HarmonyOS Sans SC", "Noto Sans SC",
     "Microsoft YaHei UI", "Microsoft YaHei", system-ui, sans-serif;
   --nextone-color-danger: #c43d4b;
+  --nextone-color-danger-text: #a8323f;
+  --nextone-color-danger-soft: color-mix(
+    in srgb,
+    var(--nextone-color-danger) 8%,
+    var(--nextone-color-surface)
+  );
+  --nextone-color-danger-border: color-mix(
+    in srgb,
+    var(--nextone-color-danger) 30%,
+    var(--nextone-color-border)
+  );
   --nextone-radius-small: 8px;
   --nextone-radius-medium: 12px;
   --nextone-radius-large: 18px;

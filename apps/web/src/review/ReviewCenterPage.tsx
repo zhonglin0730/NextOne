@@ -30,6 +30,7 @@ export function ReviewCenterPage() {
   >([]);
   const [reviewDates, setReviewDates] = useState<Record<string, string>>({});
   const [error, setError] = useState("");
+  const [feedback, setFeedback] = useState("");
 
   const load = useCallback(async () => {
     try {
@@ -56,10 +57,32 @@ export function ReviewCenterPage() {
       return;
     }
     try {
-      await transitionWithWipConfirmation(task.id, status, (limit) =>
-        window.confirm(`${t("wip.title", { limit })}\n\n${t("wip.confirm")}`),
+      setFeedback("");
+      const updated = await transitionWithWipConfirmation(
+        task.id,
+        status,
+        (limit) => window.confirm(`${t("wip.title", { limit })}\n\n${t("wip.confirm")}`),
+        false,
       );
-      await load();
+      if (
+        updated !== undefined &&
+        updated.status !== "COMPLETED" &&
+        updated.status !== "CANCELED"
+      ) {
+        await taskApplicationService.acknowledgeReview(updated.id);
+      }
+      if (updated !== undefined) {
+        const feedbackKey =
+          status === "WAITING"
+            ? "review.feedback.waiting"
+            : status === "READY"
+              ? "review.feedback.resumed"
+              : status === "DOING"
+                ? "review.feedback.started"
+                : "review.feedback.canceled";
+        setFeedback(t(feedbackKey, { title: task.title }));
+        notifyTasksChanged();
+      }
     } catch {
       setError(t("common.error"));
     }
@@ -67,9 +90,21 @@ export function ReviewCenterPage() {
 
   const keepReady = async (task: Task) => {
     try {
+      setFeedback("");
       await taskApplicationService.keepReadyAfterReview(task.id);
       notifyTasksChanged();
-      await load();
+      setFeedback(t("review.feedback.keptReady", { title: task.title }));
+    } catch {
+      setError(t("common.error"));
+    }
+  };
+
+  const acknowledge = async (task: Task, feedbackKey: string) => {
+    try {
+      setFeedback("");
+      await taskApplicationService.acknowledgeReview(task.id);
+      notifyTasksChanged();
+      setFeedback(t(feedbackKey, { title: task.title }));
     } catch {
       setError(t("common.error"));
     }
@@ -77,9 +112,11 @@ export function ReviewCenterPage() {
 
   const addToday = async (task: Task) => {
     try {
+      setFeedback("");
       await taskApplicationService.addToToday(task.id, getLocalDate(), getTimeZone());
+      await taskApplicationService.acknowledgeReview(task.id);
       notifyTasksChanged();
-      await load();
+      setFeedback(t("review.feedback.addedToday", { title: task.title }));
     } catch {
       setError(t("common.error"));
     }
@@ -87,9 +124,11 @@ export function ReviewCenterPage() {
 
   const someday = async (task: Task) => {
     try {
-      await taskApplicationService.moveToBoardColumn(task.id, "SOMEDAY");
+      setFeedback("");
+      const updated = await taskApplicationService.moveToBoardColumn(task.id, "SOMEDAY");
+      await taskApplicationService.acknowledgeReview(updated.id);
       notifyTasksChanged();
-      await load();
+      setFeedback(t("review.feedback.someday", { title: task.title }));
     } catch {
       setError(t("common.error"));
     }
@@ -101,9 +140,10 @@ export function ReviewCenterPage() {
       return;
     }
     try {
+      setFeedback("");
       await taskApplicationService.setReviewDate(task.id, reviewAt);
       notifyTasksChanged();
-      await load();
+      setFeedback(t("review.feedback.reviewDateSet", { title: task.title, date: reviewAt }));
     } catch {
       setError(t("common.error"));
     }
@@ -128,6 +168,11 @@ export function ReviewCenterPage() {
       </header>
 
       {error.length > 0 ? <p className="page-error">{error}</p> : null}
+      {feedback.length > 0 ? (
+        <p aria-live="polite" className="page-feedback" role="status">
+          {feedback}
+        </p>
+      ) : null}
 
       <div className="review-summary-grid">
         {reasons.map((reason) => (
@@ -164,51 +209,92 @@ export function ReviewCenterPage() {
                 </div>
                 <div className="review-actions">
                   {task.status === "READY" ? (
-                    <button
-                      className="button button-outline button-small"
-                      onClick={() => void addToday(task)}
-                    >
-                      {t("task.addToday")}
-                    </button>
-                  ) : null}
-                  {task.status === "READY" ? (
                     <>
                       <button
                         className="button button-primary button-small"
+                        onClick={() => void addToday(task)}
+                        type="button"
+                      >
+                        {t("task.addToday")}
+                      </button>
+                      <button
+                        className="button button-outline button-small"
                         onClick={() => void transition(task, "DOING")}
+                        type="button"
                       >
                         {t("action.DOING")}
                       </button>
                       <button
                         className="button button-quiet button-small"
                         onClick={() => void keepReady(task)}
+                        title={t("review.keepReadyDescription")}
+                        type="button"
                       >
                         {t("review.keepReady")}
                       </button>
                     </>
                   ) : null}
-                  {task.status !== "WAITING" ? (
+                  {task.status === "DOING" ? (
                     <button
-                      className="button button-quiet button-small"
-                      onClick={() => void transition(task, "WAITING")}
+                      className="button button-primary button-small"
+                      onClick={() => void acknowledge(task, "review.feedback.continueDoing")}
+                      type="button"
                     >
-                      {t("action.WAITING")}
+                      {t("review.continueDoing")}
                     </button>
                   ) : null}
-                  <button
-                    className="button button-quiet button-small"
-                    onClick={() => void someday(task)}
-                  >
-                    {t("action.someday")}
-                  </button>
-                  <button
-                    className="button button-danger button-small"
-                    onClick={() => void transition(task, "CANCELED")}
-                  >
-                    {t("action.CANCELED")}
-                  </button>
+                  {task.status === "WAITING" ? (
+                    <>
+                      <button
+                        className="button button-primary button-small"
+                        onClick={() => void transition(task, "READY")}
+                        type="button"
+                      >
+                        {t("review.resumeReady")}
+                      </button>
+                      <button
+                        className="button button-outline button-small"
+                        onClick={() => void acknowledge(task, "review.feedback.continueWaiting")}
+                        type="button"
+                      >
+                        {t("review.continueWaiting")}
+                      </button>
+                    </>
+                  ) : null}
+                  <details className="review-more-actions">
+                    <summary>{t("review.moreActions")}</summary>
+                    <div>
+                      {task.status !== "WAITING" ? (
+                        <button
+                          className="button button-quiet button-small"
+                          onClick={() => void transition(task, "WAITING")}
+                          type="button"
+                        >
+                          {t("action.WAITING")}
+                        </button>
+                      ) : null}
+                      <button
+                        className="button button-quiet button-small"
+                        onClick={() => void someday(task)}
+                        type="button"
+                      >
+                        {t("action.someday")}
+                      </button>
+                      <button
+                        className="button button-danger button-small"
+                        onClick={() => void transition(task, "CANCELED")}
+                        type="button"
+                      >
+                        {t("action.CANCELED")}
+                      </button>
+                    </div>
+                  </details>
                 </div>
                 <div className="review-date-action">
+                  <div className="review-date-copy">
+                    <strong>{t("review.remindLater")}</strong>
+                    <span>{t("review.reviewDateDescription")}</span>
+                  </div>
                   <input
                     aria-label={t("review.setReviewDate")}
                     min={getLocalDate()}

@@ -15,7 +15,9 @@ import {
 } from "../tasks/taskService";
 import { getLocalDate, getTimeZone } from "../today/date";
 
-const columns: readonly BoardColumn[] = ["READY", "DOING", "WAITING"];
+type VisibleBoardColumn = Exclude<BoardColumn, "SOMEDAY"> | "COMPLETED";
+
+const columns: readonly VisibleBoardColumn[] = ["READY", "DOING", "WAITING", "COMPLETED"];
 
 export function BoardPage() {
   const { t } = useTranslation();
@@ -24,6 +26,7 @@ export function BoardPage() {
   const [project, setProject] = useState<Project>();
   const [selectedTask, setSelectedTask] = useState<Task | undefined>();
   const [todayTaskIds, setTodayTaskIds] = useState<ReadonlySet<string>>(new Set());
+  const [todayFocusTaskIds, setTodayFocusTaskIds] = useState<ReadonlySet<string>>(new Set());
   const [wipLimit, setWipLimit] = useState(3);
   const [error, setError] = useState("");
   const localDate = useMemo(() => getLocalDate(), []);
@@ -39,6 +42,7 @@ export function BoardPage() {
       setTasks(boardTasks);
       setProject(projects.find((candidate) => candidate.id === projectId));
       setTodayTaskIds(new Set([...today.focus, ...today.later].map(({ task }) => task.id)));
+      setTodayFocusTaskIds(new Set(today.focus.map(({ task }) => task.id)));
       setWipLimit(rules.wipLimit);
       setError("");
     } catch {
@@ -101,7 +105,12 @@ export function BoardPage() {
 
   const addToday = async (task: Task) => {
     try {
-      await taskApplicationService.addToToday(task.id, localDate, getTimeZone());
+      await taskApplicationService.addToToday(
+        task.id,
+        localDate,
+        getTimeZone(),
+        todayFocusTaskIds.size < 3 ? "FOCUS" : "LATER",
+      );
       notifyTasksChanged();
       await load();
     } catch {
@@ -111,25 +120,36 @@ export function BoardPage() {
 
   const visibleTasks =
     projectId === undefined ? tasks : tasks.filter((task) => task.projectId === projectId);
-  const somedayTasks = visibleTasks.filter((task) => task.visibility === "SOMEDAY");
+  const somedayTasks = visibleTasks.filter(
+    (task) =>
+      task.visibility === "SOMEDAY" && task.status !== "COMPLETED" && task.status !== "CANCELED",
+  );
 
-  const tasksForColumn = (column: BoardColumn) =>
-    visibleTasks.filter((task) =>
-      column === "SOMEDAY"
-        ? task.visibility === "SOMEDAY"
-        : task.visibility !== "SOMEDAY" && task.status === column,
-    );
+  const tasksForColumn = (column: VisibleBoardColumn) =>
+    visibleTasks.filter((task) => {
+      if (column === "COMPLETED") {
+        return task.status === "COMPLETED";
+      }
+      return task.visibility !== "SOMEDAY" && task.status === column;
+    });
 
   const handleDragStart = (event: DragEvent, taskId: string) => {
     event.dataTransfer.setData("text/plain", taskId);
     event.dataTransfer.effectAllowed = "move";
   };
 
-  const handleDrop = (event: DragEvent, column: BoardColumn) => {
+  const handleDrop = (event: DragEvent, column: VisibleBoardColumn) => {
     event.preventDefault();
     const taskId = event.dataTransfer.getData("text/plain");
     if (taskId.length > 0) {
-      void moveTask(taskId, column);
+      if (column === "COMPLETED") {
+        const task = tasks.find((candidate) => candidate.id === taskId);
+        if (task !== undefined) {
+          void transition(task, "COMPLETED");
+        }
+      } else {
+        void moveTask(taskId, column);
+      }
     }
   };
 
@@ -194,7 +214,7 @@ export function BoardPage() {
                   columnTasks.map((task) => (
                     <article
                       className="board-card"
-                      draggable
+                      draggable={column !== "COMPLETED"}
                       key={task.id}
                       onDragStart={(event) => handleDragStart(event, task.id)}
                     >
@@ -213,41 +233,86 @@ export function BoardPage() {
                       )}
                       <div className="board-card-actions">
                         {column === "READY" ? (
-                          <button onClick={() => void moveTask(task.id, "DOING")} type="button">
+                          <button
+                            className="board-card-primary-action"
+                            onClick={() => void moveTask(task.id, "DOING")}
+                            type="button"
+                          >
                             {t("action.DOING")}
                           </button>
                         ) : column === "DOING" ? (
-                          <button onClick={() => void transition(task, "READY")} type="button">
-                            {t("action.pause")}
+                          <button
+                            className="board-card-primary-action"
+                            onClick={() => void transition(task, "COMPLETED")}
+                            type="button"
+                          >
+                            {t("action.COMPLETED")}
                           </button>
-                        ) : column === "WAITING" || column === "SOMEDAY" ? (
-                          <button onClick={() => void moveTask(task.id, "READY")} type="button">
+                        ) : column === "WAITING" ? (
+                          <button
+                            className="board-card-primary-action"
+                            onClick={() => void moveTask(task.id, "READY")}
+                            type="button"
+                          >
                             {t("action.READY")}
                           </button>
-                        ) : null}
-                        {column === "READY" || column === "DOING" ? (
-                          <button onClick={() => void moveTask(task.id, "WAITING")} type="button">
-                            {t("action.WAITING")}
+                        ) : (
+                          <button
+                            className="board-card-primary-action"
+                            onClick={() => void moveTask(task.id, "READY")}
+                            type="button"
+                          >
+                            {t("board.reopen")}
                           </button>
-                        ) : null}
-                        {column !== "SOMEDAY" ? (
-                          <button onClick={() => void moveTask(task.id, "SOMEDAY")} type="button">
-                            {t("action.someday")}
-                          </button>
-                        ) : null}
-                        <button onClick={() => void transition(task, "COMPLETED")} type="button">
-                          {t("action.COMPLETED")}
-                        </button>
+                        )}
                         {task.status === "READY" && task.visibility !== "SOMEDAY" ? (
                           <button
                             disabled={todayTaskIds.has(task.id)}
                             onClick={() => void addToday(task)}
                             type="button"
                           >
-                            {todayTaskIds.has(task.id)
-                              ? t("board.addedToday")
-                              : t("board.addToday")}
+                            {todayFocusTaskIds.has(task.id)
+                              ? t("board.addedTodayFocus")
+                              : todayTaskIds.has(task.id)
+                                ? t("board.addedToday")
+                                : todayFocusTaskIds.size < 3
+                                  ? t("board.addToday")
+                                  : t("board.addTodayLater")}
                           </button>
+                        ) : null}
+                        {column === "DOING" ? (
+                          <button onClick={() => void transition(task, "READY")} type="button">
+                            {t("action.pause")}
+                          </button>
+                        ) : null}
+                        {column !== "COMPLETED" ? (
+                          <details className="board-card-more">
+                            <summary>{t("board.moreActions")}</summary>
+                            <div>
+                              {column === "READY" || column === "DOING" ? (
+                                <button
+                                  onClick={() => void moveTask(task.id, "WAITING")}
+                                  type="button"
+                                >
+                                  {t("action.WAITING")}
+                                </button>
+                              ) : null}
+                              <button
+                                onClick={() => void moveTask(task.id, "SOMEDAY")}
+                                type="button"
+                              >
+                                {t("action.someday")}
+                              </button>
+                              {column !== "DOING" ? (
+                                <button
+                                  onClick={() => void transition(task, "COMPLETED")}
+                                  type="button"
+                                >
+                                  {t("action.COMPLETED")}
+                                </button>
+                              ) : null}
+                            </div>
+                          </details>
                         ) : null}
                       </div>
                     </article>
