@@ -479,6 +479,30 @@ describe("task application service", () => {
     expect(state.projects.get(project.id)?.focusTaskId).toBeUndefined();
   });
 
+  it("replaces a project focus without changing the previous task status", async () => {
+    const state = createMemoryDatabase();
+    const tasks = createService(state.database);
+    const projects = createProjectService(state.database);
+    const project = await projects.create({ name: "NextOne 产品开发" });
+    const previous = await tasks.capture({ title: "完成交互稿", projectId: project.id });
+    const next = await tasks.capture({ title: "实现项目页", projectId: project.id });
+    await tasks.transition(previous.id, "READY");
+    await tasks.transition(previous.id, "DOING");
+    await tasks.transition(next.id, "READY");
+    await projects.setFocusTask(project.id, previous.id);
+
+    await projects.setFocusTask(project.id, next.id);
+
+    expect(state.projects.get(project.id)?.focusTaskId).toBe(next.id);
+    expect(state.tasks.get(previous.id)?.status).toBe("DOING");
+    expect(
+      state.events.filter((event) => event.taskId === previous.id).map((event) => event.type),
+    ).toContain("PROJECT_FOCUS_CLEARED");
+    expect(
+      state.events.filter((event) => event.taskId === next.id).map((event) => event.type),
+    ).toContain("PROJECT_FOCUS_SET");
+  });
+
   it("clears a completed focus and recommends only the next ready task", async () => {
     const state = createMemoryDatabase();
     const tasks = createService(state.database);

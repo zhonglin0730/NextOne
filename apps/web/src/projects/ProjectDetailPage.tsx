@@ -2,8 +2,9 @@ import type { ProjectDetail } from "@nextone/application";
 import type { Task, TaskStatus } from "@nextone/domain";
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
-import { Link, useParams } from "react-router";
+import { Link, useLocation, useParams } from "react-router";
 
+import { ActionToast } from "../components/ActionToast";
 import { transitionWithWipConfirmation } from "../tasks/taskActions";
 import { TaskDrawer } from "../tasks/TaskDrawer";
 import {
@@ -16,13 +17,26 @@ import { getLocalDate, getTimeZone, getWeekStartsAt } from "../today/date";
 import { ProjectProgress } from "./ProjectProgress";
 
 interface ProjectTaskRowProps {
+  busy?: boolean;
+  focusActionLabel?: string;
   task: Task;
   focusAction?: boolean;
+  onContinue?: (task: Task) => void;
   onOpen: (task: Task) => void;
+  onReady?: (task: Task) => void;
   onSetFocus: (task: Task) => void;
 }
 
-function ProjectTaskRow({ task, focusAction = false, onOpen, onSetFocus }: ProjectTaskRowProps) {
+function ProjectTaskRow({
+  busy = false,
+  focusActionLabel,
+  task,
+  focusAction = false,
+  onContinue,
+  onOpen,
+  onReady,
+  onSetFocus,
+}: ProjectTaskRowProps) {
   const { t } = useTranslation();
 
   return (
@@ -32,9 +46,38 @@ function ProjectTaskRow({ task, focusAction = false, onOpen, onSetFocus }: Proje
         <span>{t(`status.${task.status}`)}</span>
       </button>
       {focusAction ? (
-        <button className="button button-outline button-small" onClick={() => onSetFocus(task)}>
-          {t("project.setFocus")}
+        <button
+          aria-label={t("project.focusTaskAction", {
+            action: focusActionLabel ?? t("project.setFocus"),
+            title: task.title,
+          })}
+          className="button button-outline button-small"
+          disabled={busy}
+          onClick={() => onSetFocus(task)}
+          type="button"
+        >
+          {focusActionLabel ?? t("project.setFocus")}
         </button>
+      ) : null}
+      {task.status === "WAITING" && onContinue !== undefined && onReady !== undefined ? (
+        <div className="project-task-row-actions">
+          <button
+            className="button button-primary button-small"
+            disabled={busy}
+            onClick={() => onContinue(task)}
+            type="button"
+          >
+            {t("board.resumeDoing")}
+          </button>
+          <button
+            className="button button-outline button-small"
+            disabled={busy}
+            onClick={() => onReady(task)}
+            type="button"
+          >
+            {t("action.READY")}
+          </button>
+        </div>
       ) : null}
     </div>
   );
@@ -42,6 +85,7 @@ function ProjectTaskRow({ task, focusAction = false, onOpen, onSetFocus }: Proje
 
 export function ProjectDetailPage() {
   const { i18n, t } = useTranslation();
+  const location = useLocation();
   const { projectId } = useParams();
   const weekStartsAt = useMemo(() => getWeekStartsAt(), []);
   const localDate = useMemo(() => getLocalDate(), []);
@@ -52,7 +96,9 @@ export function ProjectDetailPage() {
   const [candidateTitle, setCandidateTitle] = useState("");
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [busyTaskId, setBusyTaskId] = useState<string>();
   const [error, setError] = useState("");
+  const [feedback, setFeedback] = useState("");
 
   const load = useCallback(async () => {
     if (projectId === undefined) {
@@ -80,30 +126,80 @@ export function ProjectDetailPage() {
     return () => window.removeEventListener(tasksChangedEvent, load);
   }, [load]);
 
+  useEffect(() => {
+    if (!loading && detail !== undefined && location.hash === "#project-focus") {
+      window.requestAnimationFrame(() => {
+        document.getElementById("project-focus")?.scrollIntoView({
+          behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
+            ? "auto"
+            : "smooth",
+          block: "start",
+        });
+      });
+    }
+  }, [detail, loading, location.hash]);
+
   const setFocus = async (task: Task) => {
     if (projectId === undefined) {
       return;
     }
 
+    const currentFocus = detail?.overview.focusTask;
+    if (
+      currentFocus !== undefined &&
+      currentFocus.id !== task.id &&
+      !window.confirm(
+        t("project.replaceFocusConfirm", {
+          current: currentFocus.title,
+          next: task.title,
+        }),
+      )
+    ) {
+      return;
+    }
+
+    setBusyTaskId(task.id);
     try {
       await projectApplicationService.setFocusTask(projectId, task.id);
+      setFeedback(
+        currentFocus === undefined
+          ? t("project.feedback.focusSet", { title: task.title })
+          : t("project.feedback.focusReplaced", {
+              current: currentFocus.title,
+              next: task.title,
+            }),
+      );
       notifyTasksChanged();
-      await load();
     } catch {
       setError(t("common.error"));
+    } finally {
+      setBusyTaskId(undefined);
     }
   };
 
   const transition = async (task: Task, status: TaskStatus): Promise<Task | undefined> => {
+    setBusyTaskId(task.id);
     try {
       const updated = await transitionWithWipConfirmation(task.id, status, (limit) =>
         window.confirm(`${t("wip.title", { limit })}\n\n${t("wip.confirm")}`),
       );
-      await load();
+      if (updated !== undefined) {
+        const feedbackKey =
+          status === "DOING"
+            ? "project.feedback.started"
+            : status === "READY"
+              ? "project.feedback.ready"
+              : status === "WAITING"
+                ? "project.feedback.waiting"
+                : "project.feedback.completed";
+        setFeedback(t(feedbackKey, { title: task.title }));
+      }
       return updated;
     } catch {
       setError(t("common.error"));
       return undefined;
+    } finally {
+      setBusyTaskId(undefined);
     }
   };
 
@@ -116,18 +212,12 @@ export function ProjectDetailPage() {
     try {
       await taskApplicationService.addToToday(task.id, getLocalDate(), getTimeZone());
       setTodayTaskIds((current) => new Set(current).add(task.id));
+      setFeedback(t("project.feedback.addedToday", { title: task.title }));
       notifyTasksChanged();
     } catch {
       setError(t("common.error"));
     } finally {
       setAddingTodayTaskId(undefined);
-    }
-  };
-
-  const waitForFocusTask = async (task: Task) => {
-    const updated = await transition(task, "WAITING");
-    if (updated !== undefined) {
-      setSelectedTask(updated);
     }
   };
 
@@ -146,7 +236,6 @@ export function ProjectDetailPage() {
       await taskApplicationService.transition(task.id, "READY");
       setCandidateTitle("");
       notifyTasksChanged();
-      await load();
     } catch {
       setError(t("common.error"));
     } finally {
@@ -180,6 +269,10 @@ export function ProjectDetailPage() {
 
   const { overview } = detail;
   const recommended = overview.focusTask === undefined ? detail.nextCandidates[0] : undefined;
+  const visibleCandidates =
+    recommended === undefined
+      ? detail.nextCandidates
+      : detail.nextCandidates.filter((task) => task.id !== recommended.id);
 
   return (
     <section className="page project-detail-page" aria-labelledby="project-detail-title">
@@ -211,16 +304,18 @@ export function ProjectDetailPage() {
       </header>
 
       {error.length > 0 ? <p className="page-error">{error}</p> : null}
+      <ActionToast message={feedback} onDismiss={() => setFeedback("")} />
 
       <ProjectProgress progress={overview.progress} />
 
       <div className="project-detail-layout">
         <div className="project-detail-main">
-          <section className="project-detail-section project-focus-section">
+          <section className="project-detail-section project-focus-section" id="project-focus">
             <header>
               <div>
                 <p className="eyebrow">{t("project.currentFocus")}</p>
                 <h2>{t("project.nextStepTitle")}</h2>
+                <p className="project-focus-guidance">{t("project.singleFocusDescription")}</p>
               </div>
               {overview.focusTask === undefined ? (
                 <span className="project-health project-health-decision">
@@ -242,11 +337,18 @@ export function ProjectDetailPage() {
                     {recommended.title}
                   </button>
                   <button
+                    aria-label={t("project.focusTaskAction", {
+                      action: t("project.makeFocus"),
+                      title: recommended.title,
+                    })}
                     className="button button-primary button-small"
+                    disabled={busyTaskId === recommended.id}
                     onClick={() => void setFocus(recommended)}
                     type="button"
                   >
-                    {t("project.makeFocus")}
+                    {busyTaskId === recommended.id
+                      ? t("project.settingFocus")
+                      : t("project.makeFocus")}
                   </button>
                 </div>
               )
@@ -260,19 +362,31 @@ export function ProjectDetailPage() {
                   {overview.focusTask.status === "READY" ? (
                     <button
                       className="button button-primary button-small"
+                      disabled={busyTaskId === overview.focusTask.id}
                       onClick={() => void transition(overview.focusTask!, "DOING")}
                       type="button"
                     >
                       {t("action.DOING")}
                     </button>
                   ) : null}
-                  {overview.focusTask.status !== "WAITING" ? (
+                  {overview.focusTask.status === "DOING" ? (
                     <button
-                      className="button button-outline button-small"
-                      onClick={() => void waitForFocusTask(overview.focusTask!)}
+                      className="button button-primary button-small"
+                      disabled={busyTaskId === overview.focusTask.id}
+                      onClick={() => void transition(overview.focusTask!, "COMPLETED")}
                       type="button"
                     >
-                      {t("action.WAITING")}
+                      {t("action.COMPLETED")}
+                    </button>
+                  ) : null}
+                  {overview.focusTask.status === "DOING" ? (
+                    <button
+                      className="button button-outline button-small"
+                      disabled={busyTaskId === overview.focusTask.id}
+                      onClick={() => void transition(overview.focusTask!, "READY")}
+                      type="button"
+                    >
+                      {t("action.pause")}
                     </button>
                   ) : null}
                   {overview.focusTask.status === "READY" ? (
@@ -292,6 +406,14 @@ export function ProjectDetailPage() {
                           : t("project.addToday")}
                     </button>
                   ) : null}
+                  <button
+                    className="button button-outline button-small"
+                    disabled={busyTaskId === overview.focusTask.id}
+                    onClick={() => void transition(overview.focusTask!, "WAITING")}
+                    type="button"
+                  >
+                    {t("action.WAITING")}
+                  </button>
                 </div>
               </div>
             )}
@@ -301,18 +423,32 @@ export function ProjectDetailPage() {
             <header>
               <div>
                 <p className="eyebrow">{t("project.candidateCount")}</p>
-                <h2>{t("project.nextCandidates")}</h2>
+                <h2>
+                  {recommended === undefined
+                    ? t("project.nextCandidates")
+                    : t("project.otherCandidates")}
+                </h2>
               </div>
-              <span className="count-pill">{detail.nextCandidates.length}</span>
+              <span className="count-pill">{visibleCandidates.length}</span>
             </header>
 
-            {detail.nextCandidates.length === 0 ? (
-              <p className="inline-empty">{t("project.noCandidates")}</p>
+            {visibleCandidates.length === 0 ? (
+              <p className="inline-empty">
+                {recommended === undefined
+                  ? t("project.noCandidates")
+                  : t("project.noOtherCandidates")}
+              </p>
             ) : (
               <div className="project-task-list">
-                {detail.nextCandidates.map((task) => (
+                {visibleCandidates.map((task) => (
                   <ProjectTaskRow
+                    busy={busyTaskId === task.id}
                     focusAction={overview.focusTask?.id !== task.id}
+                    focusActionLabel={
+                      overview.focusTask === undefined
+                        ? t("project.setFocus")
+                        : t("project.replaceFocus")
+                    }
                     key={task.id}
                     onOpen={setSelectedTask}
                     onSetFocus={(candidate) => void setFocus(candidate)}
@@ -324,6 +460,7 @@ export function ProjectDetailPage() {
 
             <form className="project-candidate-form" onSubmit={addCandidate}>
               <input
+                aria-label={t("project.candidatePlaceholder")}
                 onChange={(event) => setCandidateTitle(event.target.value)}
                 placeholder={t("project.candidatePlaceholder")}
                 value={candidateTitle}
@@ -347,6 +484,13 @@ export function ProjectDetailPage() {
               <div className="project-task-list">
                 {detail.doing.map((task) => (
                   <ProjectTaskRow
+                    busy={busyTaskId === task.id}
+                    focusAction
+                    focusActionLabel={
+                      overview.focusTask === undefined
+                        ? t("project.setFocus")
+                        : t("project.replaceFocus")
+                    }
                     key={task.id}
                     onOpen={setSelectedTask}
                     onSetFocus={(candidate) => void setFocus(candidate)}
@@ -366,8 +510,11 @@ export function ProjectDetailPage() {
               <div className="project-task-list">
                 {detail.waiting.map((task) => (
                   <ProjectTaskRow
+                    busy={busyTaskId === task.id}
                     key={task.id}
+                    onContinue={(waitingTask) => void transition(waitingTask, "DOING")}
                     onOpen={setSelectedTask}
+                    onReady={(waitingTask) => void transition(waitingTask, "READY")}
                     onSetFocus={(candidate) => void setFocus(candidate)}
                     task={task}
                   />
@@ -436,7 +583,6 @@ export function ProjectDetailPage() {
           onClose={() => setSelectedTask(undefined)}
           onTaskChanged={(task) => {
             setSelectedTask(task);
-            void load();
           }}
           task={selectedTask}
         />

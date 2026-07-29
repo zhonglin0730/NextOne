@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState, type DragEvent } from "react
 import { useTranslation } from "react-i18next";
 import { Link, useParams } from "react-router";
 
+import { ActionToast } from "../components/ActionToast";
 import { loadActionRules, preferencesChangedEvent } from "../settings/preferences";
 import { TaskDrawer } from "../tasks/TaskDrawer";
 import { transitionWithWipConfirmation } from "../tasks/taskActions";
@@ -24,11 +25,13 @@ export function BoardPage() {
   const { projectId } = useParams();
   const [tasks, setTasks] = useState<readonly Task[]>([]);
   const [project, setProject] = useState<Project>();
+  const [projectNames, setProjectNames] = useState<ReadonlyMap<string, string>>(new Map());
   const [selectedTask, setSelectedTask] = useState<Task | undefined>();
   const [todayTaskIds, setTodayTaskIds] = useState<ReadonlySet<string>>(new Set());
   const [todayFocusTaskIds, setTodayFocusTaskIds] = useState<ReadonlySet<string>>(new Set());
   const [wipLimit, setWipLimit] = useState(3);
   const [error, setError] = useState("");
+  const [feedback, setFeedback] = useState("");
   const localDate = useMemo(() => getLocalDate(), []);
 
   const load = useCallback(async () => {
@@ -36,11 +39,12 @@ export function BoardPage() {
       const [boardTasks, today, projects, rules] = await Promise.all([
         taskApplicationService.listBoardTasks(),
         taskApplicationService.getToday(localDate),
-        projectId === undefined ? Promise.resolve([]) : projectApplicationService.listProjects(),
+        projectApplicationService.listProjects(),
         loadActionRules(),
       ]);
       setTasks(boardTasks);
       setProject(projects.find((candidate) => candidate.id === projectId));
+      setProjectNames(new Map(projects.map((candidate) => [candidate.id, candidate.name])));
       setTodayTaskIds(new Set([...today.focus, ...today.later].map(({ task }) => task.id)));
       setTodayFocusTaskIds(new Set(today.focus.map(({ task }) => task.id)));
       setWipLimit(rules.wipLimit);
@@ -88,7 +92,17 @@ export function BoardPage() {
       }
 
       notifyTasksChanged();
-      await load();
+      const feedbackKey =
+        column === "DOING"
+          ? "board.feedback.started"
+          : column === "WAITING"
+            ? "board.feedback.waiting"
+            : column === "SOMEDAY"
+              ? "board.feedback.someday"
+              : current.status === "COMPLETED"
+                ? "board.feedback.reopened"
+                : "board.feedback.ready";
+      setFeedback(t(feedbackKey, { title: current.title }));
     } catch {
       setError(t("common.error"));
     }
@@ -96,8 +110,19 @@ export function BoardPage() {
 
   const transition = async (task: Task, status: TaskStatus) => {
     try {
-      await transitionWithWipConfirmation(task.id, status, confirmOverride);
-      await load();
+      const updated = await transitionWithWipConfirmation(task.id, status, confirmOverride);
+      if (updated !== undefined) {
+        setFeedback(
+          t(
+            status === "COMPLETED"
+              ? "board.feedback.completed"
+              : status === "READY"
+                ? "board.feedback.ready"
+                : "board.feedback.started",
+            { title: task.title },
+          ),
+        );
+      }
     } catch {
       setError(t("common.error"));
     }
@@ -105,14 +130,15 @@ export function BoardPage() {
 
   const addToday = async (task: Task) => {
     try {
-      await taskApplicationService.addToToday(
-        task.id,
-        localDate,
-        getTimeZone(),
-        todayFocusTaskIds.size < 3 ? "FOCUS" : "LATER",
-      );
+      const section = todayFocusTaskIds.size < 3 ? "FOCUS" : "LATER";
+      await taskApplicationService.addToToday(task.id, localDate, getTimeZone(), section);
       notifyTasksChanged();
-      await load();
+      setFeedback(
+        t(
+          section === "FOCUS" ? "board.feedback.addedTodayFocus" : "board.feedback.addedTodayLater",
+          { title: task.title },
+        ),
+      );
     } catch {
       setError(t("common.error"));
     }
@@ -191,6 +217,7 @@ export function BoardPage() {
       </header>
 
       {error.length > 0 ? <p className="page-error">{error}</p> : null}
+      <ActionToast message={feedback} onDismiss={() => setFeedback("")} />
       <p className="board-hint">{t("board.dragHint")}</p>
 
       <div className="board-columns">
@@ -225,6 +252,13 @@ export function BoardPage() {
                       >
                         {task.title}
                       </button>
+                      {projectId === undefined ? (
+                        <span className="board-card-project">
+                          {task.projectId === undefined
+                            ? t("project.noProject")
+                            : (projectNames.get(task.projectId) ?? t("project.unknownProject"))}
+                        </span>
+                      ) : null}
                       {task.status === "WAITING" && task.waitingFor !== undefined ? (
                         <p>{task.waitingFor}</p>
                       ) : null}
@@ -251,10 +285,10 @@ export function BoardPage() {
                         ) : column === "WAITING" ? (
                           <button
                             className="board-card-primary-action"
-                            onClick={() => void moveTask(task.id, "READY")}
+                            onClick={() => void moveTask(task.id, "DOING")}
                             type="button"
                           >
-                            {t("action.READY")}
+                            {t("board.resumeDoing")}
                           </button>
                         ) : (
                           <button
@@ -285,9 +319,19 @@ export function BoardPage() {
                             {t("action.pause")}
                           </button>
                         ) : null}
+                        {column === "WAITING" ? (
+                          <button onClick={() => void moveTask(task.id, "READY")} type="button">
+                            {t("action.READY")}
+                          </button>
+                        ) : null}
                         {column !== "COMPLETED" ? (
                           <details className="board-card-more">
-                            <summary>{t("board.moreActions")}</summary>
+                            <summary
+                              aria-label={t("board.moreActionsFor", { title: task.title })}
+                              title={t("board.moreActionsFor", { title: task.title })}
+                            >
+                              {t("board.moreActions")}
+                            </summary>
                             <div>
                               {column === "READY" || column === "DOING" ? (
                                 <button

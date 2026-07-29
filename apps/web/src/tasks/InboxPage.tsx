@@ -1,9 +1,10 @@
 import type { Task } from "@nextone/domain";
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Link } from "react-router";
 
 import { TaskDrawer } from "./TaskDrawer";
-import { taskApplicationService, tasksChangedEvent } from "./taskService";
+import { notifyTasksChanged, taskApplicationService, tasksChangedEvent } from "./taskService";
 
 interface InboxPageProps {
   onOpenCapture: () => void;
@@ -15,6 +16,7 @@ export function InboxPage({ onOpenCapture }: InboxPageProps) {
   const [selectedTask, setSelectedTask] = useState<Task | undefined>();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [movedTaskTitle, setMovedTaskTitle] = useState("");
 
   const loadTasks = useCallback(async () => {
     try {
@@ -36,7 +38,8 @@ export function InboxPage({ onOpenCapture }: InboxPageProps) {
   const clarify = async (task: Task) => {
     try {
       await taskApplicationService.transition(task.id, "READY");
-      await loadTasks();
+      setMovedTaskTitle(task.title);
+      notifyTasksChanged();
     } catch {
       setError(t("common.error"));
     }
@@ -61,6 +64,12 @@ export function InboxPage({ onOpenCapture }: InboxPageProps) {
       </header>
 
       {error.length > 0 ? <p className="page-error">{error}</p> : null}
+      {movedTaskTitle.length > 0 ? (
+        <div aria-live="polite" className="page-feedback inbox-move-feedback" role="status">
+          <span>{t("inbox.movedToReady", { title: movedTaskTitle })}</span>
+          <Link to="/board">{t("inbox.viewBoard")}</Link>
+        </div>
+      ) : null}
 
       {loading ? (
         <div className="task-list-skeleton" aria-hidden="true" />

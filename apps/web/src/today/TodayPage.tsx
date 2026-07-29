@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router";
 
+import { ActionToast } from "../components/ActionToast";
 import { transitionWithWipConfirmation } from "../tasks/taskActions";
 import {
   notifyTasksChanged,
@@ -161,6 +162,7 @@ export function TodayPage() {
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [feedback, setFeedback] = useState("");
   const [kickoffCandidates, setKickoffCandidates] = useState<readonly Task[]>([]);
   const [kickoffOpen, setKickoffOpen] = useState(false);
   const [dailyCapacityMinutes, setDailyCapacityMinutes] = useState(defaultDailyCapacityMinutes);
@@ -213,8 +215,16 @@ export function TodayPage() {
 
   const transition = async (task: Task, status: TaskStatus) => {
     try {
-      await transitionWithWipConfirmation(task.id, status, confirmOverride);
-      await load();
+      const updated = await transitionWithWipConfirmation(task.id, status, confirmOverride);
+      if (updated !== undefined) {
+        const feedbackKey =
+          status === "DOING"
+            ? "today.feedback.started"
+            : status === "READY"
+              ? "today.feedback.paused"
+              : "today.feedback.waiting";
+        setFeedback(t(feedbackKey, { title: task.title }));
+      }
     } catch {
       setError(t("common.error"));
     }
@@ -224,7 +234,7 @@ export function TodayPage() {
     try {
       await taskApplicationService.removeFromToday(task.id, localDate);
       notifyTasksChanged();
-      await load();
+      setFeedback(t("today.feedback.removed", { title: task.title }));
     } catch {
       setError(t("common.error"));
     }
@@ -235,6 +245,7 @@ export function TodayPage() {
     setCompletingIds((current) => new Set([...current, task.id]));
     try {
       await taskApplicationService.transition(task.id, "COMPLETED");
+      setFeedback(t("today.feedback.completed", { title: task.title }));
       const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
       if (reducedMotion) {
         notifyTasksChanged();
@@ -285,7 +296,6 @@ export function TodayPage() {
       localStorage.setItem(kickoffStorageKey, "started");
       setKickoffOpen(false);
       notifyTasksChanged();
-      await load();
     } catch {
       setError(t("common.error"));
     }
@@ -323,6 +333,7 @@ export function TodayPage() {
       </header>
 
       {error.length > 0 ? <p className="page-error">{error}</p> : null}
+      <ActionToast message={feedback} onDismiss={() => setFeedback("")} />
 
       <div className="today-grid">
         <section className="today-section today-focus" aria-labelledby="focus-title">

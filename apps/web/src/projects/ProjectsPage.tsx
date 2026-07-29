@@ -80,8 +80,6 @@ export function ProjectsPage() {
       await transitionWithWipConfirmation(task.id, "DOING", (limit) =>
         window.confirm(`${t("wip.title", { limit })}\n\n${t("wip.confirm")}`),
       );
-      notifyTasksChanged();
-      await load();
     } catch {
       setError(t("common.error"));
     } finally {
@@ -92,12 +90,18 @@ export function ProjectsPage() {
   const formatter = new Intl.DateTimeFormat(i18n.resolvedLanguage ?? "zh-CN", {
     dateStyle: "medium",
   });
-  const needsDecisionCount = projects.filter(({ needsFocusDecision }) => needsFocusDecision).length;
-  const attentionProjects = projects.filter(({ needsFocusDecision }) => needsFocusDecision);
   const primaryProject =
     projects.find(({ focusTask }) => focusTask?.status === "DOING") ??
     projects.find(({ focusTask }) => focusTask !== undefined) ??
     projects[0];
+  const attentionProjects = projects.filter(
+    ({ needsFocusDecision, project }) =>
+      needsFocusDecision && project.id !== primaryProject?.project.id,
+  );
+  const portfolioProjects = projects.filter(
+    ({ project }) => project.id !== primaryProject?.project.id,
+  );
+  const needsDecisionCount = attentionProjects.length;
 
   return (
     <section className="page projects-page" aria-labelledby="projects-title">
@@ -163,14 +167,14 @@ export function ProjectsPage() {
                   {primaryProject.focusTask === undefined ? (
                     <Link
                       className="button button-primary"
-                      to={`/projects/${primaryProject.project.id}`}
+                      to={`/projects/${primaryProject.project.id}#project-focus`}
                     >
                       {t("project.decideNext")}
                     </Link>
                   ) : primaryProject.focusTask.status === "DOING" ? (
                     <Link
                       className="button button-primary"
-                      to={`/projects/${primaryProject.project.id}`}
+                      to={`/projects/${primaryProject.project.id}#project-focus`}
                     >
                       {t("project.continueProject")}
                     </Link>
@@ -186,12 +190,6 @@ export function ProjectsPage() {
                         : t("project.startNext")}
                     </button>
                   )}
-                  <Link
-                    className="button button-outline"
-                    to={`/projects/${primaryProject.project.id}`}
-                  >
-                    {t("project.openProject")}
-                  </Link>
                 </div>
               </div>
             </section>
@@ -213,7 +211,7 @@ export function ProjectsPage() {
               </header>
               <div className="project-attention-list">
                 {attentionProjects.map(({ project }) => (
-                  <Link key={project.id} to={`/projects/${project.id}`}>
+                  <Link key={project.id} to={`/projects/${project.id}#project-focus`}>
                     <span>{project.name}</span>
                     <strong>{t("project.decideNext")} →</strong>
                   </Link>
@@ -225,13 +223,13 @@ export function ProjectsPage() {
           <div className="project-section-heading">
             <div>
               <p className="eyebrow">{t("project.portfolioEyebrow")}</p>
-              <h2>{t("project.allActiveProjects")}</h2>
+              <h2>{t("project.otherActiveProjects")}</h2>
             </div>
-            <span className="count-pill">{projects.length}</span>
+            <span className="count-pill">{portfolioProjects.length}</span>
           </div>
 
           <div className="project-grid">
-            {projects.map((overview) => (
+            {portfolioProjects.map((overview) => (
               <article
                 className={`project-card ${
                   overview.needsFocusDecision ? "project-card-needs-focus" : ""
@@ -261,11 +259,10 @@ export function ProjectsPage() {
                   </span>
                 </header>
 
-                <Link className="project-focus-card" to={`/projects/${overview.project.id}`}>
+                <div className="project-focus-card">
                   <span>{t("project.currentNext")}</span>
                   <strong>{overview.focusTask?.title ?? t("project.noFocus")}</strong>
-                  <span aria-hidden="true">›</span>
-                </Link>
+                </div>
 
                 <ProjectProgress compact progress={overview.progress} />
 
@@ -285,11 +282,14 @@ export function ProjectsPage() {
                 </dl>
 
                 <footer>
-                  {overview.lastProgressAt === undefined
-                    ? t("project.noProgress")
-                    : t("project.lastProgress", {
-                        date: formatter.format(new Date(overview.lastProgressAt)),
-                      })}
+                  <span>
+                    {overview.lastProgressAt === undefined
+                      ? t("project.noProgress")
+                      : t("project.lastProgress", {
+                          date: formatter.format(new Date(overview.lastProgressAt)),
+                        })}
+                  </span>
+                  <Link to={`/projects/${overview.project.id}`}>{t("project.openProject")} →</Link>
                 </footer>
               </article>
             ))}

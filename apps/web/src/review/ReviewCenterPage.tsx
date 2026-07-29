@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router";
 
+import { ActionToast } from "../components/ActionToast";
 import { transitionWithWipConfirmation } from "../tasks/taskActions";
 import {
   notifyTasksChanged,
@@ -168,11 +169,7 @@ export function ReviewCenterPage() {
       </header>
 
       {error.length > 0 ? <p className="page-error">{error}</p> : null}
-      {feedback.length > 0 ? (
-        <p aria-live="polite" className="page-feedback" role="status">
-          {feedback}
-        </p>
-      ) : null}
+      <ActionToast message={feedback} onDismiss={() => setFeedback("")} />
 
       <div className="review-summary-grid">
         {reasons.map((reason) => (
