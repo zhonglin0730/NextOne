@@ -6,7 +6,7 @@ import {
   type TaskEvent,
   type TaskStatus,
 } from "@nextone/domain";
-import { useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 
 import { getLocalDate, getTimeZone } from "../today/date";
@@ -28,6 +28,7 @@ export function TaskDrawer({ task, onClose, onTaskChanged }: TaskDrawerProps) {
   const [title, setTitle] = useState(task.title);
   const [note, setNote] = useState(task.note ?? "");
   const [projectId, setProjectId] = useState(task.projectId ?? "");
+  const [parentTaskId, setParentTaskId] = useState(task.parentTaskId ?? "");
   const [deadlineAt, setDeadlineAt] = useState(task.deadlineAt ?? "");
   const [reviewAt, setReviewAt] = useState(task.reviewAt ?? "");
   const [estimateMinutes, setEstimateMinutes] = useState(task.estimateMinutes?.toString() ?? "");
@@ -35,6 +36,7 @@ export function TaskDrawer({ task, onClose, onTaskChanged }: TaskDrawerProps) {
   const [waitingFor, setWaitingFor] = useState(task.waitingFor ?? "");
   const [events, setEvents] = useState<readonly TaskEvent[]>([]);
   const [projects, setProjects] = useState<readonly Project[]>([]);
+  const [workPackages, setWorkPackages] = useState<readonly Task[]>([]);
   const [addedToday, setAddedToday] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [dirty, setDirty] = useState(false);
@@ -46,16 +48,14 @@ export function TaskDrawer({ task, onClose, onTaskChanged }: TaskDrawerProps) {
   };
 
   const loadTodayMembership = async () => {
-    const today = await taskApplicationService.getToday(getLocalDate());
-    setAddedToday(
-      [...today.focus, ...today.later].some(({ task: todayTask }) => todayTask.id === task.id),
-    );
+    setAddedToday(await taskApplicationService.isInTodayPlan(task.id, getLocalDate()));
   };
 
   useEffect(() => {
     setTitle(task.title);
     setNote(task.note ?? "");
     setProjectId(task.projectId ?? "");
+    setParentTaskId(task.parentTaskId ?? "");
     setDeadlineAt(task.deadlineAt ?? "");
     setReviewAt(task.reviewAt ?? "");
     setEstimateMinutes(task.estimateMinutes?.toString() ?? "");
@@ -67,6 +67,16 @@ export function TaskDrawer({ task, onClose, onTaskChanged }: TaskDrawerProps) {
   }, [task]);
 
   useEffect(() => {
+    if (projectId.length === 0) {
+      setWorkPackages([]);
+      return;
+    }
+    void taskApplicationService
+      .listProjectWorkPackages(projectId)
+      .then((packages) => setWorkPackages(packages.filter((item) => item.id !== task.id)));
+  }, [projectId, task.id]);
+
+  useEffect(() => {
     setDirty(false);
     setSaved(false);
   }, [task.id]);
@@ -75,6 +85,23 @@ export function TaskDrawer({ task, onClose, onTaskChanged }: TaskDrawerProps) {
     setDirty(true);
     setSaved(false);
   };
+
+  const requestClose = useCallback(() => {
+    if (dirty && !window.confirm(t("task.discardChangesConfirm"))) {
+      return;
+    }
+    onClose();
+  }, [dirty, onClose, t]);
+
+  useEffect(() => {
+    const closeOnEscape = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") {
+        requestClose();
+      }
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [requestClose]);
 
   const save = async (event: FormEvent) => {
     event.preventDefault();
@@ -86,6 +113,7 @@ export function TaskDrawer({ task, onClose, onTaskChanged }: TaskDrawerProps) {
         title,
         note: note.trim().length === 0 ? null : note,
         projectId: projectId.length === 0 ? null : projectId,
+        parentTaskId: parentTaskId.length === 0 ? null : parentTaskId,
         deadlineAt: deadlineAt.length === 0 ? null : deadlineAt,
         reviewAt: reviewAt.length === 0 ? null : reviewAt,
         estimateMinutes: estimateMinutes.length === 0 ? null : Number.parseInt(estimateMinutes, 10),
@@ -107,6 +135,9 @@ export function TaskDrawer({ task, onClose, onTaskChanged }: TaskDrawerProps) {
 
   const changeStatus = async (status: TaskStatus) => {
     if (status === "CANCELED" && !window.confirm(t("task.abandonConfirm"))) {
+      return;
+    }
+    if (dirty && !window.confirm(t("task.discardChangesForStatusConfirm"))) {
       return;
     }
 
@@ -161,7 +192,7 @@ export function TaskDrawer({ task, onClose, onTaskChanged }: TaskDrawerProps) {
       return status === "READY";
     }
     if (task.status === "WAITING") {
-      return status === "READY" || status === "COMPLETED";
+      return status === "READY" || status === "DOING" || status === "COMPLETED";
     }
     return (
       status === "READY" || status === "DOING" || status === "WAITING" || status === "COMPLETED"
@@ -173,7 +204,7 @@ export function TaskDrawer({ task, onClose, onTaskChanged }: TaskDrawerProps) {
   });
 
   return (
-    <div className="drawer-backdrop" role="presentation" onMouseDown={onClose}>
+    <div className="drawer-backdrop" role="presentation" onMouseDown={requestClose}>
       <aside
         aria-labelledby="task-drawer-title"
         aria-modal="true"
@@ -189,7 +220,7 @@ export function TaskDrawer({ task, onClose, onTaskChanged }: TaskDrawerProps) {
           <button
             aria-label={t("common.close")}
             className="icon-button"
-            onClick={onClose}
+            onClick={requestClose}
             type="button"
           >
             ×
@@ -219,7 +250,9 @@ export function TaskDrawer({ task, onClose, onTaskChanged }: TaskDrawerProps) {
                 onClick={() => void changeStatus(status)}
                 type="button"
               >
-                {t(`action.${status}`)}
+                {status === "DOING" && task.status === "WAITING"
+                  ? t("board.resumeDoing")
+                  : t(`action.${status}`)}
               </button>
             ))}
           </div>
@@ -257,6 +290,7 @@ export function TaskDrawer({ task, onClose, onTaskChanged }: TaskDrawerProps) {
             <select
               onChange={(event) => {
                 setProjectId(event.target.value);
+                setParentTaskId("");
                 markDirty();
               }}
               value={projectId}
@@ -269,6 +303,26 @@ export function TaskDrawer({ task, onClose, onTaskChanged }: TaskDrawerProps) {
               ))}
             </select>
           </label>
+          {projectId.length === 0 ? null : (
+            <label className="form-field details-span">
+              <span>{t("task.workPackage")}</span>
+              <select
+                onChange={(event) => {
+                  setParentTaskId(event.target.value);
+                  markDirty();
+                }}
+                value={parentTaskId}
+              >
+                <option value="">{t("task.workPackageRoot")}</option>
+                {workPackages.map((workPackage) => (
+                  <option key={workPackage.id} value={workPackage.id}>
+                    {workPackage.title}
+                  </option>
+                ))}
+              </select>
+              <small>{t("task.workPackageHint")}</small>
+            </label>
+          )}
           <label className="form-field">
             <span>{t("task.deadline")}</span>
             <input

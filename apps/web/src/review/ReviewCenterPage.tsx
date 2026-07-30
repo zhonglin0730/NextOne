@@ -303,6 +303,7 @@ export function ReviewCenterPage() {
                   />
                   <button
                     className="button button-outline button-small"
+                    disabled={(reviewDates[task.id] ?? "").length === 0}
                     onClick={() => void setReviewDate(task)}
                     type="button"
                   >

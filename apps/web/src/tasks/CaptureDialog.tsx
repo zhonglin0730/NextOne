@@ -1,8 +1,16 @@
 import type { EnergyLevel, Project } from "@nextone/domain";
-import { useEffect, useState, type FormEvent, type KeyboardEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+  type KeyboardEvent,
+} from "react";
 import { useTranslation } from "react-i18next";
 
 import { getLocalDate, getTimeZone } from "../today/date";
+import type { CaptureDestination } from "./captureContext";
 import {
   notifyTasksChanged,
   projectApplicationService,
@@ -11,13 +19,17 @@ import {
 
 interface CaptureDialogProps {
   defaultDestination: CaptureDestination;
+  defaultProjectId?: string;
   open: boolean;
   onClose: () => void;
 }
 
-type CaptureDestination = "INBOX" | "TODAY";
-
-export function CaptureDialog({ defaultDestination, open, onClose }: CaptureDialogProps) {
+export function CaptureDialog({
+  defaultDestination,
+  defaultProjectId,
+  open,
+  onClose,
+}: CaptureDialogProps) {
   const { t } = useTranslation();
   const [title, setTitle] = useState("");
   const [note, setNote] = useState("");
@@ -31,12 +43,14 @@ export function CaptureDialog({ defaultDestination, open, onClose }: CaptureDial
   const [destination, setDestination] = useState<CaptureDestination>(defaultDestination);
   const [capturedTaskId, setCapturedTaskId] = useState<string>();
   const [error, setError] = useState("");
+  const [dirty, setDirty] = useState(false);
+  const submittingRef = useRef(false);
 
   useEffect(() => {
     if (open) {
       setTitle("");
       setNote("");
-      setProjectId("");
+      setProjectId(defaultProjectId ?? "");
       setDeadlineAt("");
       setReviewAt("");
       setEstimateMinutes("");
@@ -44,19 +58,46 @@ export function CaptureDialog({ defaultDestination, open, onClose }: CaptureDial
       setDestination(defaultDestination);
       setCapturedTaskId(undefined);
       setError("");
+      setDirty(false);
       void projectApplicationService.listProjects("ACTIVE").then(setProjects);
     }
-  }, [defaultDestination, open]);
+  }, [defaultDestination, defaultProjectId, open]);
+
+  const requestClose = useCallback(() => {
+    if (dirty && !window.confirm(t("task.discardChangesConfirm"))) {
+      return;
+    }
+    onClose();
+  }, [dirty, onClose, t]);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    const closeOnEscape = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") {
+        requestClose();
+      }
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [open, requestClose]);
 
   if (!open) {
     return null;
   }
 
   const submit = async () => {
-    if (title.trim().length === 0 || submitting) {
+    if (title.trim().length === 0 || submittingRef.current) {
+      return;
+    }
+    const parsedEstimate = estimateMinutes.length === 0 ? undefined : Number(estimateMinutes);
+    if (parsedEstimate !== undefined && (!Number.isInteger(parsedEstimate) || parsedEstimate < 1)) {
+      setError(t("capture.invalidEstimate"));
       return;
     }
 
+    submittingRef.current = true;
     setSubmitting(true);
     setError("");
     let taskWasCaptured = capturedTaskId !== undefined;
@@ -70,16 +111,16 @@ export function CaptureDialog({ defaultDestination, open, onClose }: CaptureDial
           ...(projectId.length === 0 ? {} : { projectId }),
           ...(deadlineAt.length === 0 ? {} : { deadlineAt }),
           ...(reviewAt.length === 0 ? {} : { reviewAt }),
-          ...(estimateMinutes.length === 0
-            ? {}
-            : { estimateMinutes: Number.parseInt(estimateMinutes, 10) }),
+          ...(parsedEstimate === undefined ? {} : { estimateMinutes: parsedEstimate }),
           ...(energyLevel === "" ? {} : { energyLevel }),
         });
         taskId = task.id;
         taskWasCaptured = true;
         setCapturedTaskId(task.id);
       }
-      if (destination === "TODAY") {
+      if (destination === "PROJECT") {
+        await taskApplicationService.transition(taskId, "READY");
+      } else if (destination === "TODAY") {
         await taskApplicationService.transition(taskId, "READY");
         await taskApplicationService.addToToday(taskId, getLocalDate(), getTimeZone());
       }
@@ -87,9 +128,12 @@ export function CaptureDialog({ defaultDestination, open, onClose }: CaptureDial
       onClose();
     } catch {
       setError(
-        taskWasCaptured && destination === "TODAY" ? t("capture.todayFallback") : t("common.error"),
+        taskWasCaptured && destination !== "INBOX"
+          ? t(destination === "TODAY" ? "capture.todayFallback" : "capture.projectFallback")
+          : t("common.error"),
       );
     } finally {
+      submittingRef.current = false;
       setSubmitting(false);
     }
   };
@@ -107,7 +151,7 @@ export function CaptureDialog({ defaultDestination, open, onClose }: CaptureDial
   };
 
   return (
-    <div className="modal-backdrop" role="presentation" onMouseDown={onClose}>
+    <div className="modal-backdrop" role="presentation" onMouseDown={requestClose}>
       <section
         aria-labelledby="capture-title"
         aria-modal="true"
@@ -117,12 +161,18 @@ export function CaptureDialog({ defaultDestination, open, onClose }: CaptureDial
       >
         <header className="dialog-header">
           <h2 id="capture-title">
-            {t(destination === "TODAY" ? "capture.todayTitle" : "capture.title")}
+            {t(
+              destination === "TODAY"
+                ? "capture.todayTitle"
+                : destination === "PROJECT"
+                  ? "capture.projectTitle"
+                  : "capture.title",
+            )}
           </h2>
           <button
             aria-label={t("common.close")}
             className="icon-button"
-            onClick={onClose}
+            onClick={requestClose}
             type="button"
           >
             ×
@@ -132,6 +182,19 @@ export function CaptureDialog({ defaultDestination, open, onClose }: CaptureDial
         <form onSubmit={handleSubmit}>
           <fieldset className="capture-destination">
             <legend>{t("capture.destination")}</legend>
+            {defaultProjectId === undefined ? null : (
+              <label>
+                <input
+                  checked={destination === "PROJECT"}
+                  onChange={() => {
+                    setDestination("PROJECT");
+                    setProjectId(defaultProjectId ?? "");
+                  }}
+                  type="radio"
+                />
+                <span>{t("capture.destinationProject")}</span>
+              </label>
+            )}
             <label>
               <input
                 checked={destination === "TODAY"}
@@ -149,17 +212,35 @@ export function CaptureDialog({ defaultDestination, open, onClose }: CaptureDial
               <span>{t("capture.destinationInbox")}</span>
             </label>
           </fieldset>
+          {destination === "PROJECT" ? (
+            <p className="capture-project-context">
+              <span>{t("capture.projectContext")}</span>
+              <strong>
+                {projects.find((project) => project.id === projectId)?.name ??
+                  t("capture.projectLoading")}
+              </strong>
+            </p>
+          ) : null}
           <textarea
             autoFocus
             className="capture-title-input"
-            onChange={(event) => setTitle(event.target.value)}
+            onChange={(event) => {
+              setTitle(event.target.value);
+              setDirty(true);
+            }}
             onKeyDown={handleTitleKeyDown}
             placeholder={t("capture.placeholder")}
             rows={3}
             value={title}
           />
           <p className="field-hint">
-            {t(destination === "TODAY" ? "capture.todayHint" : "capture.hint")}
+            {t(
+              destination === "TODAY"
+                ? "capture.todayHint"
+                : destination === "PROJECT"
+                  ? "capture.projectHint"
+                  : "capture.hint",
+            )}
           </p>
 
           <details className="capture-details">
@@ -168,7 +249,10 @@ export function CaptureDialog({ defaultDestination, open, onClose }: CaptureDial
               <label className="form-field details-span">
                 <span>{t("capture.note")}</span>
                 <textarea
-                  onChange={(event) => setNote(event.target.value)}
+                  onChange={(event) => {
+                    setNote(event.target.value);
+                    setDirty(true);
+                  }}
                   placeholder={t("capture.notePlaceholder")}
                   rows={3}
                   value={note}
@@ -176,8 +260,16 @@ export function CaptureDialog({ defaultDestination, open, onClose }: CaptureDial
               </label>
               <label className="form-field details-span">
                 <span>{t("task.project")}</span>
-                <select onChange={(event) => setProjectId(event.target.value)} value={projectId}>
-                  <option value="">{t("project.noProject")}</option>
+                <select
+                  onChange={(event) => {
+                    setProjectId(event.target.value);
+                    setDirty(true);
+                  }}
+                  value={projectId}
+                >
+                  {destination === "PROJECT" ? null : (
+                    <option value="">{t("project.noProject")}</option>
+                  )}
                   {projects.map((project) => (
                     <option key={project.id} value={project.id}>
                       {project.name}
@@ -188,7 +280,10 @@ export function CaptureDialog({ defaultDestination, open, onClose }: CaptureDial
               <label className="form-field">
                 <span>{t("capture.deadline")}</span>
                 <input
-                  onChange={(event) => setDeadlineAt(event.target.value)}
+                  onChange={(event) => {
+                    setDeadlineAt(event.target.value);
+                    setDirty(true);
+                  }}
                   type="date"
                   value={deadlineAt}
                 />
@@ -196,7 +291,10 @@ export function CaptureDialog({ defaultDestination, open, onClose }: CaptureDial
               <label className="form-field">
                 <span>{t("capture.reviewAt")}</span>
                 <input
-                  onChange={(event) => setReviewAt(event.target.value)}
+                  onChange={(event) => {
+                    setReviewAt(event.target.value);
+                    setDirty(true);
+                  }}
                   type="date"
                   value={reviewAt}
                 />
@@ -205,7 +303,10 @@ export function CaptureDialog({ defaultDestination, open, onClose }: CaptureDial
                 <span>{t("capture.estimate")}</span>
                 <input
                   min="1"
-                  onChange={(event) => setEstimateMinutes(event.target.value)}
+                  onChange={(event) => {
+                    setEstimateMinutes(event.target.value);
+                    setDirty(true);
+                  }}
                   type="number"
                   value={estimateMinutes}
                 />
@@ -213,7 +314,10 @@ export function CaptureDialog({ defaultDestination, open, onClose }: CaptureDial
               <label className="form-field">
                 <span>{t("capture.energy")}</span>
                 <select
-                  onChange={(event) => setEnergyLevel(event.target.value as EnergyLevel | "")}
+                  onChange={(event) => {
+                    setEnergyLevel(event.target.value as EnergyLevel | "");
+                    setDirty(true);
+                  }}
                   value={energyLevel}
                 >
                   <option value="">{t("capture.energyNone")}</option>
@@ -228,7 +332,7 @@ export function CaptureDialog({ defaultDestination, open, onClose }: CaptureDial
           {error.length > 0 ? <p className="form-error">{error}</p> : null}
 
           <footer className="dialog-actions">
-            <button className="button button-secondary" onClick={onClose} type="button">
+            <button className="button button-secondary" onClick={requestClose} type="button">
               {t("common.cancel")}
             </button>
             <button
@@ -238,7 +342,13 @@ export function CaptureDialog({ defaultDestination, open, onClose }: CaptureDial
             >
               {submitting
                 ? t("common.saving")
-                : t(destination === "TODAY" ? "capture.submitToday" : "capture.submit")}
+                : t(
+                    destination === "TODAY"
+                      ? "capture.submitToday"
+                      : destination === "PROJECT"
+                        ? "capture.submitProject"
+                        : "capture.submit",
+                  )}
             </button>
           </footer>
         </form>

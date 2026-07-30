@@ -37,6 +37,8 @@ public class TaskService {
                 id,
                 userId,
                 command.projectId(),
+                null,
+                TaskKind.ACTION,
                 title,
                 trimToNull(command.note()),
                 TaskStatus.INBOX,
@@ -111,6 +113,10 @@ public class TaskService {
             boolean allowWipOverride
     ) {
         TaskView current = get(userId, taskId);
+        if (current.kind() == TaskKind.WORK_PACKAGE
+                && !(current.status() == TaskStatus.INBOX && target == TaskStatus.READY)) {
+            throw new ApiException(HttpStatus.CONFLICT, "TASK_WORK_PACKAGE_TRANSITION_INVALID");
+        }
         if (!current.status().canTransitionTo(target)) {
             throw new ApiException(HttpStatus.CONFLICT, "TASK_TRANSITION_INVALID", Map.of(
                     "from", current.status().name(),
@@ -317,6 +323,8 @@ public class TaskService {
                 source.id(),
                 source.userId(),
                 projectId,
+                source.parentTaskId(),
+                source.kind(),
                 title,
                 note,
                 status,

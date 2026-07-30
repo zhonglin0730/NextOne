@@ -203,7 +203,10 @@ function createMemoryDatabase() {
   return { database, tasks, events, outbox, plans, planItems, projects };
 }
 
-function createService(database: LocalDatabase) {
+function createService(
+  database: LocalDatabase,
+  rules?: { focusLimit?: number; wipLimit?: number },
+) {
   let id = 0;
   let minute = 0;
 
@@ -212,6 +215,7 @@ function createService(database: LocalDatabase) {
     userId: "local-user",
     generateId: () => `id-${++id}`,
     now: () => `2026-07-24T10:${String(minute++).padStart(2, "0")}:00.000Z`,
+    ...(rules === undefined ? {} : { loadRules: async () => rules }),
   });
 }
 
@@ -251,6 +255,32 @@ describe("task application service", () => {
     expect(state.outbox[0]?.entityId).toBe(task.id);
   });
 
+  it("rejects capture into a project that does not exist", async () => {
+    const state = createMemoryDatabase();
+    const service = createService(state.database);
+
+    await expect(
+      service.capture({ title: "不能成为孤儿任务", projectId: "missing-project" }),
+    ).rejects.toThrow("Active project not found");
+
+    expect(state.tasks.size).toBe(0);
+    expect(state.events).toHaveLength(0);
+    expect(state.outbox).toHaveLength(0);
+  });
+
+  it("rejects invalid estimate minutes at the application boundary", async () => {
+    const state = createMemoryDatabase();
+    const service = createService(state.database);
+
+    await expect(service.capture({ title: "非法预估", estimateMinutes: 0 })).rejects.toThrow(
+      "Estimate minutes must be a positive integer",
+    );
+    await expect(service.capture({ title: "非法预估", estimateMinutes: 1.5 })).rejects.toThrow(
+      "Estimate minutes must be a positive integer",
+    );
+    expect(state.tasks.size).toBe(0);
+  });
+
   it("persists edited task details and appends an outbox mutation", async () => {
     const state = createMemoryDatabase();
     const service = createService(state.database);
@@ -260,6 +290,7 @@ describe("task application service", () => {
       title: "明确的下一步",
       note: "保存后的备注",
       projectId: null,
+      parentTaskId: null,
       deadlineAt: "2026-07-31",
       reviewAt: null,
       estimateMinutes: 30,
@@ -357,6 +388,21 @@ describe("task application service", () => {
     expect(waitingView.doing).toHaveLength(0);
   });
 
+  it("keeps an unplanned doing task visible in today after it is paused", async () => {
+    const state = createMemoryDatabase();
+    const service = createService(state.database);
+    const task = await service.capture({ title: "专注后暂停" });
+    await service.transition(task.id, "READY");
+    await service.transition(task.id, "DOING");
+
+    const paused = await service.pauseAndKeepToday(task.id, "2026-07-24", "Asia/Shanghai");
+    const today = await service.getToday("2026-07-24");
+
+    expect(paused.status).toBe("READY");
+    expect(today.focus.map((entry) => entry.task.id)).toEqual([task.id]);
+    expect(await service.isInTodayPlan(task.id, "2026-07-24")).toBe(true);
+  });
+
   it("rejects a fourth doing task until the user explicitly overrides the limit", async () => {
     const state = createMemoryDatabase();
     const service = createService(state.database);
@@ -451,6 +497,81 @@ describe("task application service", () => {
     expect(restored.visibility).toBe("ACTIVE");
   });
 
+  it("reactivates a snoozed task when the user explicitly adds it to today", async () => {
+    const state = createMemoryDatabase();
+    const service = createService(state.database);
+    const captured = await service.capture({ title: "提醒后今天处理" });
+    await service.transition(captured.id, "READY");
+    await service.setReviewDate(captured.id, "2026-07-24");
+
+    await service.addToToday(captured.id, "2026-07-24", "Asia/Shanghai");
+
+    expect(state.tasks.get(captured.id)?.visibility).toBe("ACTIVE");
+    expect((await service.getToday("2026-07-24")).focus[0]?.task.id).toBe(captured.id);
+  });
+
+  it("does not count snoozed doing work against the active WIP limit", async () => {
+    const state = createMemoryDatabase();
+    const service = createService(state.database);
+    const snoozed = await service.capture({ title: "暂缓的进行中任务" });
+    const next = await service.capture({ title: "当前真正推进的任务" });
+    await service.transition(snoozed.id, "READY");
+    await service.transition(next.id, "READY");
+    await service.transition(snoozed.id, "DOING");
+    await service.setReviewDate(snoozed.id, "2026-08-01");
+
+    const started = await service.transition(next.id, "DOING");
+
+    expect(started.status).toBe("DOING");
+  });
+
+  it("reactivates a snoozed task when review sends it back to ready", async () => {
+    const state = createMemoryDatabase();
+    const service = createService(state.database);
+    const captured = await service.capture({ title: "提醒后重新决定" });
+    await service.transition(captured.id, "READY");
+    await service.transition(captured.id, "WAITING");
+    await service.setReviewDate(captured.id, "2026-08-01");
+
+    const ready = await service.transition(captured.id, "READY");
+
+    expect(ready.status).toBe("READY");
+    expect(ready.visibility).toBe("ACTIVE");
+  });
+
+  it("reactivates reviewed doing work and restores its project focus", async () => {
+    const state = createMemoryDatabase();
+    const tasks = createService(state.database);
+    const projects = createProjectService(state.database);
+    const project = await projects.create({ name: "恢复推进的项目" });
+    const task = await tasks.capture({ title: "提醒后继续推进", projectId: project.id });
+    await tasks.transition(task.id, "READY");
+    await tasks.transition(task.id, "DOING");
+    await tasks.setReviewDate(task.id, "2026-08-01");
+
+    const reviewed = await tasks.acknowledgeReview(task.id);
+
+    expect(reviewed.visibility).toBe("ACTIVE");
+    expect(state.projects.get(project.id)?.focusTaskId).toBe(task.id);
+  });
+
+  it("clears project focus when its task is snoozed until a review date", async () => {
+    const state = createMemoryDatabase();
+    const tasks = createService(state.database);
+    const projects = createProjectService(state.database);
+    const project = await projects.create({ name: "等待合适时间" });
+    const focus = await tasks.capture({ title: "暂缓发布", projectId: project.id });
+    await tasks.transition(focus.id, "READY");
+    await projects.setFocusTask(project.id, focus.id);
+
+    await tasks.setReviewDate(focus.id, "2026-08-01");
+
+    const detail = await projects.getDetail(project.id, "2026-07-20T00:00:00.000Z");
+    expect(state.projects.get(project.id)?.focusTaskId).toBeUndefined();
+    expect(detail?.overview.focusTask).toBeUndefined();
+    expect(detail?.nextCandidates).toHaveLength(0);
+  });
+
   it("does not carry unfinished tasks into another date automatically", async () => {
     const state = createMemoryDatabase();
     const service = createService(state.database);
@@ -462,6 +583,21 @@ describe("task application service", () => {
 
     expect(tomorrow.focus).toHaveLength(0);
     expect(tomorrow.later).toHaveLength(0);
+  });
+
+  it("enforces the configured focus limit even when focus is explicitly requested", async () => {
+    const state = createMemoryDatabase();
+    const service = createService(state.database, { focusLimit: 1 });
+    const first = await service.capture({ title: "唯一焦点" });
+    const second = await service.capture({ title: "转入之后可做" });
+    await service.transition(first.id, "READY");
+    await service.transition(second.id, "READY");
+
+    const firstItem = await service.addToToday(first.id, "2026-07-24", "Asia/Shanghai", "FOCUS");
+    const secondItem = await service.addToToday(second.id, "2026-07-24", "Asia/Shanghai", "FOCUS");
+
+    expect(firstItem.section).toBe("FOCUS");
+    expect(secondItem.section).toBe("LATER");
   });
 
   it("only allows a project task to become that project's focus", async () => {
@@ -503,6 +639,61 @@ describe("task application service", () => {
     ).toContain("PROJECT_FOCUS_SET");
   });
 
+  it("makes a started project task the current project focus", async () => {
+    const state = createMemoryDatabase();
+    const tasks = createService(state.database);
+    const projects = createProjectService(state.database);
+    const project = await projects.create({ name: "NextOne 产品开发" });
+    const previous = await tasks.capture({ title: "原来的项目焦点", projectId: project.id });
+    const started = await tasks.capture({ title: "实际开始推进的任务", projectId: project.id });
+    await tasks.transition(previous.id, "READY");
+    await tasks.transition(started.id, "READY");
+    await projects.setFocusTask(project.id, previous.id);
+
+    await tasks.transition(started.id, "DOING");
+
+    expect(state.projects.get(project.id)?.focusTaskId).toBe(started.id);
+    expect(state.tasks.get(previous.id)?.status).toBe("READY");
+    expect(
+      state.events.filter((event) => event.taskId === previous.id).map((event) => event.type),
+    ).toContain("PROJECT_FOCUS_CLEARED");
+    expect(
+      state.events.filter((event) => event.taskId === started.id).map((event) => event.type),
+    ).toContain("PROJECT_FOCUS_SET");
+  });
+
+  it("moves the focus with a doing task when its project changes", async () => {
+    const state = createMemoryDatabase();
+    const tasks = createService(state.database);
+    const projects = createProjectService(state.database);
+    const source = await projects.create({ name: "原项目" });
+    const target = await projects.create({ name: "新项目" });
+    const task = await tasks.capture({ title: "正在推进的任务", projectId: source.id });
+    await tasks.transition(task.id, "READY");
+    await tasks.transition(task.id, "DOING");
+
+    await tasks.updateDetails(task.id, {
+      title: task.title,
+      note: null,
+      projectId: target.id,
+      parentTaskId: null,
+      deadlineAt: null,
+      reviewAt: null,
+      estimateMinutes: null,
+      energyLevel: null,
+      waitingFor: null,
+    });
+
+    expect(state.projects.get(source.id)?.focusTaskId).toBeUndefined();
+    expect(state.projects.get(target.id)?.focusTaskId).toBe(task.id);
+
+    const targetDetail = await projects.getDetail(target.id, "2026-07-20T00:00:00.000Z");
+    expect(targetDetail?.recentActivity.map(({ event }) => event.type)).toEqual([
+      "PROJECT_CHANGED",
+      "PROJECT_FOCUS_SET",
+    ]);
+  });
+
   it("clears a completed focus and recommends only the next ready task", async () => {
     const state = createMemoryDatabase();
     const tasks = createService(state.database);
@@ -532,6 +723,70 @@ describe("task application service", () => {
       completedPercent: 33,
     });
     expect(state.events.map((event) => event.type)).toContain("PROJECT_FOCUS_CLEARED");
+  });
+
+  it("builds a three-level project structure and derives work-package progress", async () => {
+    const state = createMemoryDatabase();
+    const tasks = createService(state.database);
+    const projects = createProjectService(state.database);
+    const project = await projects.create({ name: "发布 NextOne" });
+    const workstream = await tasks.capture({
+      title: "Web 版本",
+      projectId: project.id,
+      kind: "WORK_PACKAGE",
+    });
+    await tasks.transition(workstream.id, "READY");
+    const milestone = await tasks.capture({
+      title: "上线验收",
+      projectId: project.id,
+      parentTaskId: workstream.id,
+      kind: "WORK_PACKAGE",
+    });
+    await tasks.transition(milestone.id, "READY");
+    const action = await tasks.capture({
+      title: "完成回归测试",
+      projectId: project.id,
+      parentTaskId: milestone.id,
+    });
+    await tasks.transition(action.id, "READY");
+    await tasks.transition(action.id, "COMPLETED");
+
+    const detail = await projects.getDetail(project.id, "2026-07-20T00:00:00.000Z");
+    const board = await tasks.listBoardTasks();
+
+    expect(detail?.structure).toHaveLength(1);
+    expect(detail?.structure[0]?.task.id).toBe(workstream.id);
+    expect(detail?.structure[0]?.children[0]?.task.id).toBe(milestone.id);
+    expect(detail?.structure[0]?.children[0]?.children[0]?.task.id).toBe(action.id);
+    expect(detail?.structure[0]?.progress.completedPercent).toBe(100);
+    expect(board.map((task) => task.id)).toEqual([action.id]);
+  });
+
+  it("rejects work packages deeper than the supported project structure", async () => {
+    const state = createMemoryDatabase();
+    const tasks = createService(state.database);
+    const projects = createProjectService(state.database);
+    const project = await projects.create({ name: "层级边界" });
+    const root = await tasks.capture({
+      title: "第一层",
+      projectId: project.id,
+      kind: "WORK_PACKAGE",
+    });
+    const second = await tasks.capture({
+      title: "第二层",
+      projectId: project.id,
+      parentTaskId: root.id,
+      kind: "WORK_PACKAGE",
+    });
+
+    await expect(
+      tasks.capture({
+        title: "不允许的第三层工作包",
+        projectId: project.id,
+        parentTaskId: second.id,
+        kind: "WORK_PACKAGE",
+      }),
+    ).rejects.toThrow("at most three levels");
   });
 
   it("clears project focus when the next step becomes externally blocked", async () => {
@@ -630,6 +885,23 @@ describe("task application service", () => {
     expect(after.items.map(({ task }) => task.id)).not.toContain(captured.id);
   });
 
+  it("does not ask for another decision after a dated task is completed", async () => {
+    const state = createMemoryDatabase();
+    const tasks = createService(state.database);
+    const review = createReviewService(state.database);
+    const captured = await tasks.capture({
+      title: "已经完成的到期事项",
+      deadlineAt: "2026-07-24",
+      reviewAt: "2026-07-24",
+    });
+    await tasks.transition(captured.id, "READY");
+    await tasks.transition(captured.id, "COMPLETED");
+
+    const center = await review.getCenter("2026-07-24T12:00:00.000Z");
+
+    expect(center.items.map(({ task }) => task.id)).not.toContain(captured.id);
+  });
+
   it("keeps an acknowledged review task in today while removing its decision card", async () => {
     const state = createMemoryDatabase();
     const tasks = createService(state.database);
@@ -674,6 +946,59 @@ describe("task application service", () => {
 
     expect(after.unfinished).toHaveLength(0);
     expect(after.completed.map(({ task }) => task.id)).toEqual([completedTask.id]);
+  });
+
+  it("moves an unfinished task out of today when explicitly continued tomorrow", async () => {
+    const state = createMemoryDatabase();
+    const tasks = createService(state.database);
+    const captured = await tasks.capture({ title: "明天继续推进" });
+    await tasks.transition(captured.id, "READY");
+    await tasks.addToToday(captured.id, "2026-07-24", "Asia/Shanghai");
+    await tasks.transition(captured.id, "DOING");
+
+    await tasks.continueTomorrow(captured.id, "2026-07-24", "2026-07-25", "Asia/Shanghai", "FOCUS");
+
+    const today = await tasks.getToday("2026-07-24");
+    const tomorrow = await tasks.getToday("2026-07-25");
+    const task = await tasks.findTask(captured.id);
+
+    expect(today.focus).toHaveLength(0);
+    expect(today.doing).toHaveLength(0);
+    expect(tomorrow.focus.map((entry) => entry.task.id)).toEqual([captured.id]);
+    expect(task?.status).toBe("READY");
+  });
+
+  it("includes active doing work in daily close even when it was started outside today", async () => {
+    const state = createMemoryDatabase();
+    const tasks = createService(state.database);
+    const review = createReviewService(state.database);
+    const captured = await tasks.capture({ title: "从总看板直接开始" });
+    await tasks.transition(captured.id, "READY");
+    await tasks.transition(captured.id, "DOING");
+
+    const close = await review.getDailyClose("2026-07-24");
+
+    expect(close.plan).toBeUndefined();
+    expect(close.unfinished.map(({ task }) => task.id)).toEqual([captured.id]);
+  });
+
+  it("keeps unplanned work in daily close after it is paused or completed", async () => {
+    const state = createMemoryDatabase();
+    const tasks = createService(state.database);
+    const review = createReviewService(state.database);
+    const paused = await tasks.capture({ title: "开始后暂停" });
+    const completed = await tasks.capture({ title: "开始后完成" });
+    await tasks.transition(paused.id, "READY");
+    await tasks.transition(completed.id, "READY");
+    await tasks.transition(paused.id, "DOING");
+    await tasks.transition(paused.id, "READY");
+    await tasks.transition(completed.id, "DOING");
+    await tasks.transition(completed.id, "COMPLETED");
+
+    const close = await review.getDailyClose("2026-07-24", "UTC");
+
+    expect(close.unfinished.map(({ task }) => task.id)).toContain(paused.id);
+    expect(close.completed.map(({ task }) => task.id)).toContain(completed.id);
   });
 
   it("keeps canceled work queryable in the activity log", async () => {

@@ -1,6 +1,6 @@
 import type { ProjectOverview } from "@nextone/application";
 import type { Task } from "@nextone/domain";
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, useNavigate } from "react-router";
 
@@ -26,6 +26,7 @@ export function ProjectsPage() {
   const [submitting, setSubmitting] = useState(false);
   const [startingTaskId, setStartingTaskId] = useState<string>();
   const [error, setError] = useState("");
+  const createSubmittingRef = useRef(false);
 
   const load = useCallback(async () => {
     try {
@@ -44,6 +45,19 @@ export function ProjectsPage() {
     return () => window.removeEventListener(tasksChangedEvent, load);
   }, [load]);
 
+  useEffect(() => {
+    if (!dialogOpen) {
+      return;
+    }
+    const closeOnEscape = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setDialogOpen(false);
+      }
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [dialogOpen]);
+
   const openCreate = () => {
     setName("");
     setNote("");
@@ -53,10 +67,11 @@ export function ProjectsPage() {
 
   const createProject = async (event: FormEvent) => {
     event.preventDefault();
-    if (name.trim().length === 0 || submitting) {
+    if (name.trim().length === 0 || createSubmittingRef.current) {
       return;
     }
 
+    createSubmittingRef.current = true;
     setSubmitting(true);
     try {
       const project = await projectApplicationService.create({
@@ -69,6 +84,7 @@ export function ProjectsPage() {
     } catch {
       setError(t("common.error"));
     } finally {
+      createSubmittingRef.current = false;
       setSubmitting(false);
     }
   };
@@ -349,6 +365,7 @@ export function ProjectsPage() {
                   value={note}
                 />
               </label>
+              {error.length > 0 ? <p className="form-error">{error}</p> : null}
               <footer className="dialog-actions">
                 <button
                   className="button button-secondary"

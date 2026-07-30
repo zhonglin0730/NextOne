@@ -3,6 +3,7 @@ package com.nextone.project;
 import com.nextone.common.ApiException;
 import com.nextone.event.TaskEventRepository;
 import com.nextone.task.TaskRepository;
+import com.nextone.task.TaskKind;
 import com.nextone.task.TaskStatus;
 import com.nextone.task.TaskView;
 import java.time.Clock;
@@ -102,6 +103,7 @@ public class ProjectService {
             nextFocus = tasks.findById(userId, taskId)
                     .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "TASK_NOT_FOUND"));
             if (!projectId.equals(nextFocus.projectId())
+                    || nextFocus.kind() != TaskKind.ACTION
                     || nextFocus.status() == TaskStatus.INBOX
                     || nextFocus.status().terminal()) {
                 throw new ApiException(HttpStatus.CONFLICT, "PROJECT_FOCUS_TASK_INVALID");

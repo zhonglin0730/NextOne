@@ -5,6 +5,7 @@ import { BrowserRouter, Navigate, NavLink, Route, Routes, useLocation } from "re
 import { BoardPage } from "./board/BoardPage";
 import { BrandLogo } from "./brand/BrandLogo";
 import { ProjectDetailPage } from "./projects/ProjectDetailPage";
+import { ProjectStructurePage } from "./projects/ProjectStructurePage";
 import { ProjectsPage } from "./projects/ProjectsPage";
 import { DailyClosePage } from "./review/DailyClosePage";
 import { ReviewCenterPage } from "./review/ReviewCenterPage";
@@ -15,6 +16,7 @@ import { DataManagementPage } from "./settings/DataManagementPage";
 import { SettingsPage } from "./settings/SettingsPage";
 import { loadPreferences } from "./settings/preferences";
 import { CaptureDialog } from "./tasks/CaptureDialog";
+import { getCaptureContext } from "./tasks/captureContext";
 import { InboxPage } from "./tasks/InboxPage";
 import { TodayPage } from "./today/TodayPage";
 
@@ -102,7 +104,13 @@ function AppShell() {
   const { t } = useTranslation();
   const location = useLocation();
   const [captureOpen, setCaptureOpen] = useState(false);
-  const captureForToday = location.pathname === "/today";
+  const captureContext = getCaptureContext(location.pathname);
+  const captureLabelKey =
+    captureContext.defaultDestination === "TODAY"
+      ? "shell.addToday"
+      : captureContext.defaultDestination === "PROJECT"
+        ? "shell.addProjectTask"
+        : "shell.quickCapture";
 
   useEffect(() => {
     const stopSync = startAutomaticSync();
@@ -138,7 +146,7 @@ function AppShell() {
               <SyncIndicator />
               {location.pathname === "/inbox" ? null : (
                 <button
-                  aria-label={t(captureForToday ? "shell.addToday" : "shell.quickCapture")}
+                  aria-label={t(captureLabelKey)}
                   className="capture-button"
                   onClick={() => setCaptureOpen(true)}
                   type="button"
@@ -146,9 +154,7 @@ function AppShell() {
                   <span aria-hidden="true" className="capture-icon">
                     ＋
                   </span>
-                  <span className="capture-label">
-                    {t(captureForToday ? "shell.addToday" : "shell.quickCapture")}
-                  </span>
+                  <span className="capture-label">{t(captureLabelKey)}</span>
                 </button>
               )}
             </div>
@@ -162,6 +168,7 @@ function AppShell() {
           <Route element={<BoardPage />} path="/board" />
           <Route element={<ProjectsPage />} path="/projects" />
           <Route element={<ProjectDetailPage />} path="/projects/:projectId" />
+          <Route element={<ProjectStructurePage />} path="/projects/:projectId/structure" />
           <Route element={<BoardPage />} path="/projects/:projectId/board" />
           <Route element={<ReviewCenterPage />} path="/review" />
           <Route element={<DailyClosePage />} path="/review/daily" />
@@ -185,7 +192,10 @@ function AppShell() {
       </main>
 
       <CaptureDialog
-        defaultDestination={captureForToday ? "TODAY" : "INBOX"}
+        defaultDestination={captureContext.defaultDestination}
+        {...(captureContext.projectId === undefined
+          ? {}
+          : { defaultProjectId: captureContext.projectId })}
         onClose={() => setCaptureOpen(false)}
         open={captureOpen}
       />

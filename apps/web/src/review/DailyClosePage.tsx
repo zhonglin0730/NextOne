@@ -1,4 +1,4 @@
-import type { DailyCloseView, TodayTask } from "@nextone/application";
+import type { DailyCloseTask, DailyCloseView } from "@nextone/application";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router";
@@ -8,6 +8,7 @@ import {
   reviewApplicationService,
   taskApplicationService,
 } from "../tasks/taskService";
+import { loadActionRules } from "../settings/preferences";
 import { getLocalDate, getTimeZone } from "../today/date";
 
 function addLocalDays(localDate: string, days: number): string {
@@ -26,27 +27,22 @@ export function DailyClosePage() {
   const tomorrow = useMemo(() => addLocalDays(localDate, 1), [localDate]);
   const [view, setView] = useState<DailyCloseView>();
   const [tomorrowCount, setTomorrowCount] = useState(0);
+  const [focusLimit, setFocusLimit] = useState(3);
   const [processed, setProcessed] = useState<ReadonlySet<string>>(new Set());
-  const [canceled, setCanceled] = useState<readonly TodayTask[]>([]);
+  const [canceled, setCanceled] = useState<readonly DailyCloseTask[]>([]);
   const [reviewDates, setReviewDates] = useState<Record<string, string>>({});
   const [error, setError] = useState("");
 
   const load = useCallback(async () => {
     try {
-      const [close, tomorrowView] = await Promise.all([
-        reviewApplicationService.getDailyClose(localDate),
+      const [close, tomorrowView, rules] = await Promise.all([
+        reviewApplicationService.getDailyClose(localDate, getTimeZone()),
         taskApplicationService.getToday(tomorrow),
+        loadActionRules(),
       ]);
       setView(close);
       setTomorrowCount(tomorrowView.focus.length);
-      setProcessed(
-        (current) =>
-          new Set([
-            ...current,
-            ...tomorrowView.focus.map(({ task }) => task.id),
-            ...tomorrowView.later.map(({ task }) => task.id),
-          ]),
-      );
+      setFocusLimit(rules.focusLimit);
       setError("");
     } catch {
       setError(t("common.error"));
@@ -60,26 +56,29 @@ export function DailyClosePage() {
   const markProcessed = (taskId: string) =>
     setProcessed((current) => new Set([...current, taskId]));
 
-  const continueTomorrow = async (entry: TodayTask) => {
+  const continueTomorrow = async (entry: DailyCloseTask) => {
     try {
-      const section = tomorrowCount < 3 ? "FOCUS" : "LATER";
-      const actionableTask =
-        entry.task.status === "INBOX"
-          ? await taskApplicationService.transition(entry.task.id, "READY")
-          : entry.task;
-      await taskApplicationService.addToToday(actionableTask.id, tomorrow, getTimeZone(), section);
-      if (section === "FOCUS") {
-        setTomorrowCount((count) => count + 1);
-      }
+      const section = tomorrowCount < focusLimit ? "FOCUS" : "LATER";
+      await taskApplicationService.continueTomorrow(
+        entry.task.id,
+        localDate,
+        tomorrow,
+        getTimeZone(),
+        section,
+      );
       markProcessed(entry.task.id);
       notifyTasksChanged();
+      await load();
     } catch {
       setError(t("common.error"));
     }
   };
 
-  const removeToday = async (entry: TodayTask) => {
+  const removeToday = async (entry: DailyCloseTask) => {
     try {
+      if (entry.task.status === "DOING") {
+        await taskApplicationService.transition(entry.task.id, "READY");
+      }
       await taskApplicationService.removeFromToday(entry.task.id, localDate);
       markProcessed(entry.task.id);
       notifyTasksChanged();
@@ -89,7 +88,7 @@ export function DailyClosePage() {
     }
   };
 
-  const move = async (entry: TodayTask, action: "WAITING" | "SOMEDAY" | "CANCELED") => {
+  const move = async (entry: DailyCloseTask, action: "WAITING" | "SOMEDAY" | "CANCELED") => {
     if (action === "CANCELED" && !window.confirm(t("task.abandonConfirm"))) {
       return;
     }
@@ -110,13 +109,17 @@ export function DailyClosePage() {
     }
   };
 
-  const snooze = async (entry: TodayTask) => {
+  const snooze = async (entry: DailyCloseTask) => {
     const date = reviewDates[entry.task.id];
     if (date === undefined || date.length === 0) {
       return;
     }
     try {
+      if (entry.task.status === "INBOX" || entry.task.status === "DOING") {
+        await taskApplicationService.transition(entry.task.id, "READY");
+      }
       await taskApplicationService.setReviewDate(entry.task.id, date);
+      await taskApplicationService.removeFromToday(entry.task.id, localDate);
       markProcessed(entry.task.id);
       notifyTasksChanged();
       await load();
@@ -140,7 +143,7 @@ export function DailyClosePage() {
           <p>{t("dailyClose.description")}</p>
         </div>
         <span className="count-pill">
-          {t("dailyClose.tomorrowCount", { count: tomorrowCount })}
+          {t("dailyClose.tomorrowCount", { count: tomorrowCount, limit: focusLimit })}
         </span>
       </header>
 
@@ -228,6 +231,7 @@ export function DailyClosePage() {
                   />
                   <button
                     className="button button-outline button-small"
+                    disabled={(reviewDates[entry.task.id] ?? "").length === 0}
                     onClick={() => void snooze(entry)}
                     type="button"
                   >
@@ -263,8 +267,8 @@ export function DailyClosePage() {
         <header>
           <span>4</span>
           <div>
-            <h2>{t("dailyClose.tomorrow")}</h2>
-            <p>{t("dailyClose.tomorrowDescription")}</p>
+            <h2>{t("dailyClose.tomorrow", { limit: focusLimit })}</h2>
+            <p>{t("dailyClose.tomorrowDescription", { limit: focusLimit })}</p>
           </div>
         </header>
         <p className="daily-close-tomorrow-note">

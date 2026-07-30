@@ -1,6 +1,6 @@
 import type { ProjectDetail } from "@nextone/application";
 import type { Task, TaskStatus } from "@nextone/domain";
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, useLocation, useParams } from "react-router";
 
@@ -38,12 +38,28 @@ function ProjectTaskRow({
   onSetFocus,
 }: ProjectTaskRowProps) {
   const { t } = useTranslation();
+  const waitingDetailsMissing =
+    task.status === "WAITING" && (task.waitingFor === undefined || task.reviewAt === undefined);
 
   return (
     <div className="project-task-row">
       <button onClick={() => onOpen(task)} type="button">
         <strong>{task.title}</strong>
         <span>{t(`status.${task.status}`)}</span>
+        {task.status === "WAITING" ? (
+          <small
+            className={
+              waitingDetailsMissing ? "waiting-detail waiting-detail-missing" : "waiting-detail"
+            }
+          >
+            {task.waitingFor === undefined
+              ? t("task.waitingDetailsMissing")
+              : t("task.waitingForSummary", { value: task.waitingFor })}
+            {task.reviewAt === undefined
+              ? null
+              : ` · ${t("task.followUpSummary", { date: task.reviewAt })}`}
+          </small>
+        ) : null}
       </button>
       {focusAction ? (
         <button
@@ -61,6 +77,16 @@ function ProjectTaskRow({
       ) : null}
       {task.status === "WAITING" && onContinue !== undefined && onReady !== undefined ? (
         <div className="project-task-row-actions">
+          {waitingDetailsMissing ? (
+            <button
+              className="button button-quiet button-small"
+              disabled={busy}
+              onClick={() => onOpen(task)}
+              type="button"
+            >
+              {t("task.completeWaitingDetails")}
+            </button>
+          ) : null}
           <button
             className="button button-primary button-small"
             disabled={busy}
@@ -99,6 +125,7 @@ export function ProjectDetailPage() {
   const [busyTaskId, setBusyTaskId] = useState<string>();
   const [error, setError] = useState("");
   const [feedback, setFeedback] = useState("");
+  const candidateSubmittingRef = useRef(false);
 
   const load = useCallback(async () => {
     if (projectId === undefined) {
@@ -223,10 +250,15 @@ export function ProjectDetailPage() {
 
   const addCandidate = async (event: FormEvent) => {
     event.preventDefault();
-    if (projectId === undefined || candidateTitle.trim().length === 0 || submitting) {
+    if (
+      projectId === undefined ||
+      candidateTitle.trim().length === 0 ||
+      candidateSubmittingRef.current
+    ) {
       return;
     }
 
+    candidateSubmittingRef.current = true;
     setSubmitting(true);
     try {
       const task = await taskApplicationService.capture({
@@ -239,6 +271,7 @@ export function ProjectDetailPage() {
     } catch {
       setError(t("common.error"));
     } finally {
+      candidateSubmittingRef.current = false;
       setSubmitting(false);
     }
   };
@@ -268,11 +301,16 @@ export function ProjectDetailPage() {
   }
 
   const { overview } = detail;
-  const recommended = overview.focusTask === undefined ? detail.nextCandidates[0] : undefined;
+  const recommended =
+    overview.focusTask === undefined ? (detail.doing[0] ?? detail.nextCandidates[0]) : undefined;
   const visibleCandidates =
-    recommended === undefined
+    recommended === undefined || recommended.status === "DOING"
       ? detail.nextCandidates
       : detail.nextCandidates.filter((task) => task.id !== recommended.id);
+  const visibleDoing =
+    recommended?.status === "DOING"
+      ? detail.doing.filter((task) => task.id !== recommended.id)
+      : detail.doing;
 
   return (
     <section className="page project-detail-page" aria-labelledby="project-detail-title">
@@ -297,6 +335,9 @@ export function ProjectDetailPage() {
           >
             {overview.needsFocusDecision ? t("project.needsDecision") : t("project.active")}
           </span>
+          <Link className="button button-primary" to={`/projects/${overview.project.id}/structure`}>
+            {t("project.structureView")}
+          </Link>
           <Link className="button button-outline" to={`/projects/${overview.project.id}/board`}>
             {t("project.boardView")}
           </Link>
@@ -332,7 +373,11 @@ export function ProjectDetailPage() {
                 </div>
               ) : (
                 <div className="project-recommendation">
-                  <span>{t("project.recommendedNext")}</span>
+                  <span>
+                    {recommended.status === "DOING"
+                      ? t("project.recommendedDoing")
+                      : t("project.recommendedNext")}
+                  </span>
                   <button onClick={() => setSelectedTask(recommended)} type="button">
                     {recommended.title}
                   </button>
@@ -475,14 +520,14 @@ export function ProjectDetailPage() {
             </form>
           </section>
 
-          {detail.doing.length > 0 ? (
+          {visibleDoing.length > 0 ? (
             <section className="project-detail-section">
               <header>
                 <h2>{t("project.doing")}</h2>
-                <span className="count-pill">{detail.doing.length}</span>
+                <span className="count-pill">{visibleDoing.length}</span>
               </header>
               <div className="project-task-list">
-                {detail.doing.map((task) => (
+                {visibleDoing.map((task) => (
                   <ProjectTaskRow
                     busy={busyTaskId === task.id}
                     focusAction

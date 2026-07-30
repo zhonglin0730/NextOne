@@ -14,7 +14,7 @@ import org.springframework.stereotype.Repository;
 public class TaskRepository {
 
     private static final String COLUMNS = """
-            id, user_id, project_id, title, note, status, visibility,
+            id, user_id, project_id, parent_task_id, task_kind, title, note, status, visibility,
             deadline_at, review_at, reviewed_at, waiting_for, waiting_since,
             estimate_minutes, energy_level, sort_key, completed_at, canceled_at,
             created_at, updated_at, revision
@@ -29,15 +29,17 @@ public class TaskRepository {
     public void insert(TaskView task) {
         jdbcTemplate.update("""
                 INSERT INTO task (
-                    id, user_id, project_id, title, note, status, visibility,
+                    id, user_id, project_id, parent_task_id, task_kind, title, note, status, visibility,
                     deadline_at, review_at, reviewed_at, waiting_for, waiting_since,
                     estimate_minutes, energy_level, sort_key, completed_at, canceled_at,
                     created_at, updated_at, revision
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 task.id(),
                 task.userId(),
                 task.projectId(),
+                task.parentTaskId(),
+                task.kind().name(),
                 task.title(),
                 task.note(),
                 task.status().name(),
@@ -90,7 +92,8 @@ public class TaskRepository {
         Long count = jdbcTemplate.queryForObject("""
                 SELECT count(*)
                 FROM task
-                WHERE user_id = ? AND status = 'DOING' AND deleted_at IS NULL
+                WHERE user_id = ? AND task_kind = 'ACTION'
+                  AND status = 'DOING' AND deleted_at IS NULL
                 """, Long.class, userId);
         return count == null ? 0 : count;
     }
@@ -124,6 +127,8 @@ public class TaskRepository {
         int updated = jdbcTemplate.update("""
                 UPDATE task SET
                     project_id = ?,
+                    parent_task_id = ?,
+                    task_kind = ?,
                     title = ?,
                     note = ?,
                     status = ?,
@@ -143,6 +148,8 @@ public class TaskRepository {
                 WHERE user_id = ? AND id = ? AND revision = ? AND deleted_at IS NULL
                 """,
                 task.projectId(),
+                task.parentTaskId(),
+                task.kind().name(),
                 task.title(),
                 task.note(),
                 task.status().name(),
@@ -173,6 +180,8 @@ public class TaskRepository {
                 resultSet.getString("id"),
                 resultSet.getString("user_id"),
                 resultSet.getString("project_id"),
+                resultSet.getString("parent_task_id"),
+                TaskKind.valueOf(resultSet.getString("task_kind")),
                 resultSet.getString("title"),
                 resultSet.getString("note"),
                 TaskStatus.valueOf(resultSet.getString("status")),

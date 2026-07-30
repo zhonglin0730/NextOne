@@ -6,13 +6,17 @@ import com.nextone.project.ProjectRepository;
 import com.nextone.project.ProjectStatus;
 import com.nextone.project.ProjectView;
 import com.nextone.task.TaskRepository;
+import com.nextone.task.TaskKind;
 import com.nextone.task.TaskStatus;
 import com.nextone.task.TaskView;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -137,7 +141,8 @@ public class SyncService {
             if (incoming.status() != TaskStatus.INBOX) {
                 return rejected(mutation, "TASK_CREATE_STATUS_INVALID");
             }
-            if (!projectIsValid(userId, incoming.projectId())) {
+            if (!projectIsValid(userId, incoming.projectId())
+                    || !structureParentIsValid(userId, incoming)) {
                 return rejected(mutation, "PROJECT_NOT_FOUND");
             }
             TaskView created = taskWithRevision(incoming, userId, 1, incoming.createdAt());
@@ -169,8 +174,13 @@ public class SyncService {
         if (!completionMerge && !stored.status().canTransitionTo(target)) {
             return rejected(mutation, "TASK_TRANSITION_INVALID");
         }
-        if (!projectIsValid(userId, incoming.projectId())) {
+        if (!projectIsValid(userId, incoming.projectId())
+                || !structureParentIsValid(userId, incoming)) {
             return rejected(mutation, "PROJECT_NOT_FOUND");
+        }
+        if (stored.kind() == TaskKind.WORK_PACKAGE
+                && !(stored.status() == TaskStatus.INBOX && target == TaskStatus.READY)) {
+            return rejected(mutation, "TASK_WORK_PACKAGE_TRANSITION_INVALID");
         }
         if (target == TaskStatus.DOING && stored.status() != TaskStatus.DOING) {
             tasks.lockWipDecision(userId);
@@ -184,6 +194,8 @@ public class SyncService {
                 stored.id(),
                 userId,
                 incoming.projectId(),
+                incoming.parentTaskId(),
+                incoming.kind(),
                 incoming.title(),
                 incoming.note(),
                 target,
@@ -327,6 +339,9 @@ public class SyncService {
             ObjectNode normalized = (ObjectNode) mutation.payload().deepCopy();
             normalized.put("userId", userId);
             normalized.remove(List.of("areaId", "deletedAt"));
+            if (!normalized.hasNonNull("kind")) {
+                normalized.put("kind", "ACTION");
+            }
             incoming = jsonMapper.treeToValue(normalized, ProjectView.class);
         } catch (JacksonException | ClassCastException exception) {
             return rejected(mutation, "SYNC_PAYLOAD_INVALID");
@@ -485,7 +500,9 @@ public class SyncService {
                 || taskId == null
                 || !List.of("FOCUS", "LATER").contains(section)
                 || !dailyPlanBelongsTo(userId, planId)
-                || tasks.findById(userId, taskId).isEmpty()) {
+                || tasks.findById(userId, taskId)
+                        .filter(task -> task.kind() == TaskKind.ACTION)
+                        .isEmpty()) {
             return rejected(mutation, "SYNC_PAYLOAD_INVALID");
         }
         if ("FOCUS".equals(section)) {
@@ -637,6 +654,8 @@ public class SyncService {
                 source.id(),
                 userId,
                 source.projectId(),
+                source.parentTaskId(),
+                source.kind(),
                 source.title(),
                 source.note(),
                 source.status(),
@@ -681,12 +700,41 @@ public class SyncService {
         return projectId == null || projects.findById(userId, projectId).isPresent();
     }
 
+    private boolean structureParentIsValid(String userId, TaskView task) {
+        if (task.parentTaskId() == null) {
+            return true;
+        }
+        if (task.projectId() == null) {
+            return false;
+        }
+
+        String cursorId = task.parentTaskId();
+        int parentDepth = 0;
+        Set<String> visited = new HashSet<>();
+        while (cursorId != null) {
+            if (cursorId.equals(task.id()) || !visited.add(cursorId)) {
+                return false;
+            }
+            Optional<TaskView> parent = tasks.findById(userId, cursorId);
+            if (parent.isEmpty()
+                    || parent.get().kind() != TaskKind.WORK_PACKAGE
+                    || !Objects.equals(parent.get().projectId(), task.projectId())) {
+                return false;
+            }
+            parentDepth += 1;
+            cursorId = parent.get().parentTaskId();
+        }
+        int maxLevel = task.kind() == TaskKind.WORK_PACKAGE ? 2 : 3;
+        return parentDepth + 1 <= maxLevel;
+    }
+
     private boolean focusIsValid(String userId, String projectId, String focusTaskId) {
         if (focusTaskId == null) {
             return true;
         }
         return tasks.findById(userId, focusTaskId)
                 .map(task -> projectId.equals(task.projectId())
+                        && task.kind() == TaskKind.ACTION
                         && task.status() != TaskStatus.INBOX
                         && !task.status().terminal())
                 .orElse(false);

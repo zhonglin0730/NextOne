@@ -5,6 +5,7 @@ import com.nextone.project.ProjectRepository;
 import com.nextone.project.ProjectStatus;
 import com.nextone.project.ProjectView;
 import com.nextone.task.TaskRepository;
+import com.nextone.task.TaskKind;
 import com.nextone.task.TaskStatus;
 import com.nextone.task.TaskView;
 import com.nextone.task.TaskVisibility;
@@ -52,6 +53,9 @@ public class ReviewService {
         }
 
         for (TaskView task : tasks.list(userId, false)) {
+            if (task.kind() != TaskKind.ACTION || task.status().terminal()) {
+                continue;
+            }
             List<String> reasons = reasons(task, now);
             if (!reasons.isEmpty()) {
                 queue.add(new ReviewQueueView.ReviewTask(task, reasons));

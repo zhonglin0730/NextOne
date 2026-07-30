@@ -1,10 +1,11 @@
 import type { TodayTask, TodayView } from "@nextone/application";
-import type { Task, TaskStatus } from "@nextone/domain";
+import type { Task } from "@nextone/domain";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router";
 
 import { ActionToast } from "../components/ActionToast";
+import { TaskDrawer } from "../tasks/TaskDrawer";
 import { transitionWithWipConfirmation } from "../tasks/taskActions";
 import {
   notifyTasksChanged,
@@ -15,6 +16,7 @@ import { loadPreferences, preferencesChangedEvent } from "../settings/preference
 import { DailyCapacity } from "./DailyCapacity";
 import { getLocalDate, getTimeZone } from "./date";
 import { MorningKickoff } from "./MorningKickoff";
+import { getTodayTransitionFeedbackKey, type TodayTransitionStatus } from "./transitionFeedback";
 import { ZenMode } from "./ZenMode";
 
 const defaultDailyCapacityMinutes = 240;
@@ -45,6 +47,7 @@ function TodayTaskCard({
   entry,
   isCompleting,
   onComplete,
+  onOpen,
   onRemove,
   onTransition,
   variant,
@@ -52,8 +55,9 @@ function TodayTaskCard({
   entry: TodayTask;
   isCompleting: boolean;
   onComplete: (task: Task) => void;
+  onOpen: (task: Task) => void;
   onRemove: (task: Task) => void;
-  onTransition: (task: Task, status: TaskStatus) => void;
+  onTransition: (task: Task, status: TodayTransitionStatus) => void;
   variant: "focus" | "later";
 }) {
   const { t } = useTranslation();
@@ -82,7 +86,11 @@ function TodayTaskCard({
           <span className={`status-badge status-${task.status.toLowerCase()}`}>
             {t(`status.${task.status}`)}
           </span>
-          <h3>{task.title}</h3>
+          <h3>
+            <button className="today-task-title" onClick={() => onOpen(task)} type="button">
+              {task.title}
+            </button>
+          </h3>
           {task.estimateMinutes === undefined ? null : (
             <p>{t("today.minutes", { count: task.estimateMinutes })}</p>
           )}
@@ -166,7 +174,10 @@ export function TodayPage() {
   const [kickoffCandidates, setKickoffCandidates] = useState<readonly Task[]>([]);
   const [kickoffOpen, setKickoffOpen] = useState(false);
   const [dailyCapacityMinutes, setDailyCapacityMinutes] = useState(defaultDailyCapacityMinutes);
+  const [focusLimit, setFocusLimit] = useState(3);
+  const [wipLimit, setWipLimit] = useState(3);
   const [zenTask, setZenTask] = useState<Task>();
+  const [selectedTask, setSelectedTask] = useState<Task>();
   const [completingIds, setCompletingIds] = useState<ReadonlySet<string>>(new Set());
   const kickoffStorageKey = `nextone.kickoff.${localDate}`;
 
@@ -185,8 +196,11 @@ export function TodayPage() {
       setView(today);
       setKickoffCandidates(candidates);
       setDailyCapacityMinutes(preferences.dailyCapacityMinutes ?? defaultDailyCapacityMinutes);
+      setFocusLimit(preferences.focusLimit);
+      setWipLimit(preferences.wipLimit);
       if (
         today.focus.length === 0 &&
+        today.doing.length === 0 &&
         candidates.length > 0 &&
         localStorage.getItem(kickoffStorageKey) === null
       ) {
@@ -213,20 +227,23 @@ export function TodayPage() {
   const confirmOverride = (limit: number) =>
     window.confirm(`${t("wip.title", { limit })}\n\n${t("wip.confirm")}`);
 
-  const transition = async (task: Task, status: TaskStatus) => {
+  const transition = async (task: Task, status: TodayTransitionStatus): Promise<boolean> => {
     try {
-      const updated = await transitionWithWipConfirmation(task.id, status, confirmOverride);
-      if (updated !== undefined) {
-        const feedbackKey =
-          status === "DOING"
-            ? "today.feedback.started"
-            : status === "READY"
-              ? "today.feedback.paused"
-              : "today.feedback.waiting";
-        setFeedback(t(feedbackKey, { title: task.title }));
+      const updated =
+        status === "READY" && task.status === "DOING"
+          ? await taskApplicationService.pauseAndKeepToday(task.id, localDate, getTimeZone())
+          : await transitionWithWipConfirmation(task.id, status, confirmOverride);
+      if (status === "READY" && task.status === "DOING") {
+        notifyTasksChanged();
       }
+      if (updated !== undefined) {
+        setFeedback(t(getTodayTransitionFeedbackKey(status), { title: task.title }));
+        return true;
+      }
+      return false;
     } catch {
       setError(t("common.error"));
+      return false;
     }
   };
 
@@ -340,10 +357,10 @@ export function TodayPage() {
           <header className="section-heading">
             <div>
               <h2 id="focus-title">{t("today.focus")}</h2>
-              <p>{t("today.focusDescription")}</p>
+              <p>{t("today.focusDescription", { limit: focusLimit })}</p>
             </div>
             <span className="count-pill">
-              {t("today.focusCount", { count: view.focus.length })}
+              {t("today.focusCount", { count: view.focus.length, limit: focusLimit })}
             </span>
           </header>
           {loading ? (
@@ -375,6 +392,7 @@ export function TodayPage() {
                   isCompleting={completingIds.has(entry.task.id)}
                   key={entry.item.id}
                   onComplete={(task) => void handleComplete(task)}
+                  onOpen={setSelectedTask}
                   onRemove={(task) => void remove(task)}
                   onTransition={(task, status) => void transition(task, status)}
                   variant="focus"
@@ -391,7 +409,9 @@ export function TodayPage() {
               <h2 id="doing-title">{t("today.doing")}</h2>
               <p>{t("today.doingDescription")}</p>
             </div>
-            <span className="count-pill">{view.doing.length}/3</span>
+            <span className="count-pill">
+              {view.doing.length}/{wipLimit}
+            </span>
           </header>
           {view.doing.length === 0 ? (
             <p className="inline-empty">{t("today.emptyDoing")}</p>
@@ -415,7 +435,13 @@ export function TodayPage() {
                     </span>
                   </button>
                   <span aria-hidden="true" className="doing-indicator" />
-                  <strong>{task.title}</strong>
+                  <button
+                    className="today-doing-title"
+                    onClick={() => setSelectedTask(task)}
+                    type="button"
+                  >
+                    {task.title}
+                  </button>
                   <div className="card-actions">
                     <button
                       className="button button-quiet button-small"
@@ -464,6 +490,7 @@ export function TodayPage() {
                   isCompleting={completingIds.has(entry.task.id)}
                   key={entry.item.id}
                   onComplete={(task) => void handleComplete(task)}
+                  onOpen={setSelectedTask}
                   onRemove={(task) => void remove(task)}
                   onTransition={(task, status) => void transition(task, status)}
                   variant="later"
@@ -478,6 +505,7 @@ export function TodayPage() {
         <MorningKickoff
           candidates={kickoffCandidates}
           capacityMinutes={dailyCapacityMinutes}
+          focusLimit={focusLimit}
           onDismiss={dismissKickoff}
           onStart={startDay}
         />
@@ -487,6 +515,13 @@ export function TodayPage() {
           onClose={() => setZenTask(undefined)}
           onTransition={(status) => transition(zenTask, status)}
           task={zenTask}
+        />
+      )}
+      {selectedTask === undefined ? null : (
+        <TaskDrawer
+          onClose={() => setSelectedTask(undefined)}
+          onTaskChanged={setSelectedTask}
+          task={selectedTask}
         />
       )}
     </section>

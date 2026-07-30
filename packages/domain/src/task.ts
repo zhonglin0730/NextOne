@@ -39,12 +39,15 @@ export class InvalidTaskTransitionError extends Error {
 }
 
 export type EnergyLevel = "LOW" | "MEDIUM" | "HIGH";
+export type TaskKind = "ACTION" | "WORK_PACKAGE";
 
 export interface Task {
   id: string;
   userId: string;
   areaId?: string;
   projectId?: string;
+  parentTaskId?: string;
+  kind?: TaskKind;
   title: string;
   note?: string;
   status: TaskStatus;
@@ -73,6 +76,8 @@ export interface CreateTaskInput {
   note?: string;
   areaId?: string;
   projectId?: string;
+  parentTaskId?: string;
+  kind?: TaskKind;
   deadlineAt?: string;
   reviewAt?: string;
   estimateMinutes?: number;
@@ -90,6 +95,7 @@ export function createInboxTask(input: CreateTaskInput): Task {
     id: input.id,
     userId: input.userId,
     title,
+    kind: input.kind ?? "ACTION",
     status: "INBOX",
     visibility: "ACTIVE",
     sortKey: input.now,
@@ -101,6 +107,7 @@ export function createInboxTask(input: CreateTaskInput): Task {
       : { note: input.note.trim() }),
     ...(input.areaId === undefined ? {} : { areaId: input.areaId }),
     ...(input.projectId === undefined ? {} : { projectId: input.projectId }),
+    ...(input.parentTaskId === undefined ? {} : { parentTaskId: input.parentTaskId }),
     ...(input.deadlineAt === undefined ? {} : { deadlineAt: input.deadlineAt }),
     ...(input.reviewAt === undefined ? {} : { reviewAt: input.reviewAt }),
     ...(input.estimateMinutes === undefined ? {} : { estimateMinutes: input.estimateMinutes }),
@@ -123,9 +130,16 @@ export function transitionTask(task: Task, to: TaskStatus, now: string): Task {
     canceledAt: _canceledAt,
     ...taskWithoutStatusTimestamps
   } = task;
+  const {
+    waitingFor: _waitingFor,
+    reviewAt: _waitingReviewAt,
+    ...taskWithoutWaitingContext
+  } = taskWithoutStatusTimestamps;
+  const taskWithoutPreviousState =
+    task.status === "WAITING" ? taskWithoutWaitingContext : taskWithoutStatusTimestamps;
 
   return {
-    ...taskWithoutStatusTimestamps,
+    ...taskWithoutPreviousState,
     status: to,
     updatedAt: now,
     revision: task.revision + 1,

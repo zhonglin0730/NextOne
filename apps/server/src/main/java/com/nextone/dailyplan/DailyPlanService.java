@@ -3,6 +3,7 @@ package com.nextone.dailyplan;
 import com.nextone.common.ApiException;
 import com.nextone.event.TaskEventRepository;
 import com.nextone.task.TaskRepository;
+import com.nextone.task.TaskKind;
 import java.time.Clock;
 import java.time.DateTimeException;
 import java.time.LocalDate;
@@ -52,8 +53,11 @@ public class DailyPlanService {
     ) {
         validateTimeZone(timeZone);
         repository.lockFocusDecision(userId, date);
-        tasks.findById(userId, taskId)
+        var task = tasks.findById(userId, taskId)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "TASK_NOT_FOUND"));
+        if (task.kind() != TaskKind.ACTION) {
+            throw new ApiException(HttpStatus.CONFLICT, "TASK_NOT_ACTIONABLE");
+        }
         OffsetDateTime now = OffsetDateTime.now(clock);
         DailyPlanRepository.DailyPlanRecord plan = repository.find(userId, date)
                 .orElseGet(() -> createPlan(userId, date, timeZone, now));

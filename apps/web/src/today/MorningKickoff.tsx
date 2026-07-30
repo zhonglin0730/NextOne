@@ -7,6 +7,7 @@ import { DailyCapacity } from "./DailyCapacity";
 interface MorningKickoffProps {
   candidates: readonly Task[];
   capacityMinutes: number;
+  focusLimit: number;
   onDismiss(): void;
   onStart(tasks: readonly Task[]): Promise<void>;
 }
@@ -14,6 +15,7 @@ interface MorningKickoffProps {
 export function MorningKickoff({
   candidates,
   capacityMinutes,
+  focusLimit,
   onDismiss,
   onStart,
 }: MorningKickoffProps) {
@@ -47,7 +49,7 @@ export function MorningKickoff({
       const next = new Set(current);
       if (next.has(taskId)) {
         next.delete(taskId);
-      } else if (next.size < 3) {
+      } else if (next.size < focusLimit) {
         next.add(taskId);
       }
       return next;
@@ -77,7 +79,11 @@ export function MorningKickoff({
             <h2 id="kickoff-title">
               {step === 1 ? t("kickoff.chooseTitle") : t("kickoff.confirmTitle")}
             </h2>
-            <p>{step === 1 ? t("kickoff.chooseDescription") : t("kickoff.confirmDescription")}</p>
+            <p>
+              {step === 1
+                ? t("kickoff.chooseDescription", { limit: focusLimit })
+                : t("kickoff.confirmDescription")}
+            </p>
           </div>
           <button
             aria-label={t("common.close")}

@@ -7,6 +7,7 @@ import static org.mockito.Mockito.when;
 import com.nextone.project.ProjectRepository;
 import com.nextone.task.TaskRepository;
 import com.nextone.task.TaskStatus;
+import com.nextone.task.TaskKind;
 import com.nextone.task.TaskView;
 import com.nextone.task.TaskVisibility;
 import java.time.Clock;
@@ -51,6 +52,8 @@ class ReviewServiceTest {
                 id,
                 "local-user",
                 null,
+                null,
+                TaskKind.ACTION,
                 id,
                 null,
                 TaskStatus.READY,

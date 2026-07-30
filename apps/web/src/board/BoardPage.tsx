@@ -30,6 +30,7 @@ export function BoardPage() {
   const [todayTaskIds, setTodayTaskIds] = useState<ReadonlySet<string>>(new Set());
   const [todayFocusTaskIds, setTodayFocusTaskIds] = useState<ReadonlySet<string>>(new Set());
   const [wipLimit, setWipLimit] = useState(3);
+  const [focusLimit, setFocusLimit] = useState(3);
   const [error, setError] = useState("");
   const [feedback, setFeedback] = useState("");
   const localDate = useMemo(() => getLocalDate(), []);
@@ -48,6 +49,7 @@ export function BoardPage() {
       setTodayTaskIds(new Set([...today.focus, ...today.later].map(({ task }) => task.id)));
       setTodayFocusTaskIds(new Set(today.focus.map(({ task }) => task.id)));
       setWipLimit(rules.wipLimit);
+      setFocusLimit(rules.focusLimit);
       setError("");
     } catch {
       setError(t("common.error"));
@@ -130,7 +132,7 @@ export function BoardPage() {
 
   const addToday = async (task: Task) => {
     try {
-      const section = todayFocusTaskIds.size < 3 ? "FOCUS" : "LATER";
+      const section = todayFocusTaskIds.size < focusLimit ? "FOCUS" : "LATER";
       await taskApplicationService.addToToday(task.id, localDate, getTimeZone(), section);
       notifyTasksChanged();
       setFeedback(
@@ -156,7 +158,7 @@ export function BoardPage() {
       if (column === "COMPLETED") {
         return task.status === "COMPLETED";
       }
-      return task.visibility !== "SOMEDAY" && task.status === column;
+      return task.visibility === "ACTIVE" && task.status === column;
     });
 
   const handleDragStart = (event: DragEvent, taskId: string) => {
@@ -180,10 +182,10 @@ export function BoardPage() {
   };
 
   const globalDoingCount = tasks.filter(
-    (task) => task.visibility !== "SOMEDAY" && task.status === "DOING",
+    (task) => task.visibility === "ACTIVE" && task.status === "DOING",
   ).length;
   const projectDoingCount = visibleTasks.filter(
-    (task) => task.visibility !== "SOMEDAY" && task.status === "DOING",
+    (task) => task.visibility === "ACTIVE" && task.status === "DOING",
   ).length;
 
   return (
@@ -259,11 +261,28 @@ export function BoardPage() {
                             : (projectNames.get(task.projectId) ?? t("project.unknownProject"))}
                         </span>
                       ) : null}
-                      {task.status === "WAITING" && task.waitingFor !== undefined ? (
-                        <p>{task.waitingFor}</p>
+                      {task.status === "WAITING" ? (
+                        <p
+                          className={
+                            task.waitingFor === undefined || task.reviewAt === undefined
+                              ? "waiting-detail-missing"
+                              : undefined
+                          }
+                        >
+                          {task.waitingFor === undefined
+                            ? t("task.waitingDetailsMissing")
+                            : t("task.waitingForSummary", { value: task.waitingFor })}
+                        </p>
                       ) : null}
                       {task.reviewAt === undefined ? null : (
-                        <time dateTime={task.reviewAt}>{task.reviewAt}</time>
+                        <time dateTime={task.reviewAt}>
+                          {t(
+                            task.status === "WAITING"
+                              ? "task.followUpSummary"
+                              : "task.reviewSummary",
+                            { date: task.reviewAt },
+                          )}
+                        </time>
                       )}
                       <div className="board-card-actions">
                         {column === "READY" ? (
@@ -309,7 +328,7 @@ export function BoardPage() {
                               ? t("board.addedTodayFocus")
                               : todayTaskIds.has(task.id)
                                 ? t("board.addedToday")
-                                : todayFocusTaskIds.size < 3
+                                : todayFocusTaskIds.size < focusLimit
                                   ? t("board.addToday")
                                   : t("board.addTodayLater")}
                           </button>

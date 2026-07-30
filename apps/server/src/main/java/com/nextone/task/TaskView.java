@@ -6,6 +6,8 @@ public record TaskView(
         String id,
         String userId,
         String projectId,
+        String parentTaskId,
+        TaskKind kind,
         String title,
         String note,
         TaskStatus status,
