@@ -842,6 +842,10 @@ export class TaskApplicationService {
       return this.changeVisibility(task.id, "SOMEDAY");
     }
 
+    if (task.status === "COMPLETED" || task.status === "CANCELED") {
+      task = await this.transition(task.id, "READY");
+    }
+
     if (column === "DOING") {
       task = await this.transition(task.id, "DOING", options);
       return task.visibility === "SOMEDAY" ? this.changeVisibility(task.id, "ACTIVE") : task;

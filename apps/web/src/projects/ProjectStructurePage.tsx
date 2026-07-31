@@ -14,6 +14,7 @@ import {
   workPackageApplicationService,
 } from "../tasks/taskService";
 import { getWeekStartsAt } from "../today/date";
+import { ProjectViewNav } from "./ProjectViewNav";
 
 type StructureItemKind = "WORK_PACKAGE" | "ACTION";
 
@@ -273,8 +274,8 @@ export function ProjectStructurePage() {
 
   return (
     <section className="page project-structure-page" aria-labelledby="project-structure-title">
-      <Link className="project-back-link" to={`/projects/${detail.overview.project.id}`}>
-        ← {t("project.backToOverview")}
+      <Link className="project-back-link" to="/projects">
+        ← {t("project.back")}
       </Link>
       <header className="page-header structure-page-header">
         <div>
@@ -285,14 +286,17 @@ export function ProjectStructurePage() {
           <p>{t("structure.description")}</p>
         </div>
         <div className="structure-page-actions">
-          <Link className="button button-secondary" to={`/projects/${detail.overview.project.id}/board`}>
-            {t("project.boardView")}
-          </Link>
-          <button className="button button-primary" onClick={() => openCreate("WORK_PACKAGE")} type="button">
+          <button
+            className="button button-primary"
+            onClick={() => openCreate("WORK_PACKAGE")}
+            type="button"
+          >
             {t("structure.addRootPackage")}
           </button>
         </div>
       </header>
+
+      <ProjectViewNav projectId={detail.overview.project.id} />
 
       {error.length > 0 && !createOpen ? <p className="page-error">{error}</p> : null}
       <ActionToast message={feedback} onDismiss={() => setFeedback("")} />
@@ -331,7 +335,11 @@ export function ProjectStructurePage() {
               <strong>{t("structure.noPackagesTitle")}</strong>
               <p>{t("structure.noPackagesDescription")}</p>
             </div>
-            <button className="button button-primary" onClick={() => openCreate("WORK_PACKAGE")} type="button">
+            <button
+              className="button button-primary"
+              onClick={() => openCreate("WORK_PACKAGE")}
+              type="button"
+            >
               {t("structure.addFirstPackage")}
             </button>
           </div>
@@ -364,7 +372,11 @@ export function ProjectStructurePage() {
           <div className="structure-inbox-list">
             {detail.ungroupedActions.map((task) => (
               <article className="structure-inbox-row" key={task.id}>
-                <button className="structure-inbox-task" onClick={() => setSelectedTask(task)} type="button">
+                <button
+                  className="structure-inbox-task"
+                  onClick={() => setSelectedTask(task)}
+                  type="button"
+                >
                   <span className={`structure-task-status status-${task.status.toLowerCase()}`} />
                   <span>
                     <strong>{task.title}</strong>
@@ -372,7 +384,9 @@ export function ProjectStructurePage() {
                   </span>
                 </button>
                 {workPackages.length === 0 ? (
-                  <span className="structure-assignment-hint">{t("structure.createPackageFirst")}</span>
+                  <span className="structure-assignment-hint">
+                    {t("structure.createPackageFirst")}
+                  </span>
                 ) : (
                   <select
                     aria-label={t("structure.assignTaskLabel", { title: task.title })}
@@ -399,7 +413,11 @@ export function ProjectStructurePage() {
       )}
 
       {createOpen ? (
-        <div className="modal-backdrop" onMouseDown={() => !submitting && setCreateOpen(false)} role="presentation">
+        <div
+          className="modal-backdrop"
+          onMouseDown={() => !submitting && setCreateOpen(false)}
+          role="presentation"
+        >
           <section
             aria-labelledby="structure-create-title"
             aria-modal="true"
@@ -411,10 +429,21 @@ export function ProjectStructurePage() {
               <div>
                 <p className="eyebrow">{t("structure.addTitle")}</p>
                 <h2 id="structure-create-title">
-                  {t(kind === "WORK_PACKAGE" ? "structure.createPackageTitle" : "structure.createActionTitle")}
+                  {t(
+                    kind === "WORK_PACKAGE"
+                      ? "structure.createPackageTitle"
+                      : "structure.createActionTitle",
+                  )}
                 </h2>
               </div>
-              <button aria-label={t("common.close")} className="icon-button" onClick={() => setCreateOpen(false)} type="button">×</button>
+              <button
+                aria-label={t("common.close")}
+                className="icon-button"
+                onClick={() => setCreateOpen(false)}
+                type="button"
+              >
+                ×
+              </button>
             </header>
             <div className="structure-builder-context">
               <span>{t("structure.addingUnder")}</span>
@@ -422,7 +451,9 @@ export function ProjectStructurePage() {
             </div>
             <form onSubmit={addNode}>
               <label className="form-field">
-                <span>{t(kind === "WORK_PACKAGE" ? "structure.packageName" : "structure.actionName")}</span>
+                <span>
+                  {t(kind === "WORK_PACKAGE" ? "structure.packageName" : "structure.actionName")}
+                </span>
                 <input autoFocus onChange={(event) => setTitle(event.target.value)} value={title} />
               </label>
               {kind === "WORK_PACKAGE" && workPackages.length > 0 ? (
@@ -440,13 +471,25 @@ export function ProjectStructurePage() {
               ) : null}
               {error.length > 0 ? <p className="form-error">{error}</p> : null}
               <footer className="dialog-actions">
-                <button className="button button-secondary" onClick={() => setCreateOpen(false)} type="button">
+                <button
+                  className="button button-secondary"
+                  onClick={() => setCreateOpen(false)}
+                  type="button"
+                >
                   {t("common.cancel")}
                 </button>
-                <button className="button button-primary" disabled={title.trim().length === 0 || submitting} type="submit">
+                <button
+                  className="button button-primary"
+                  disabled={title.trim().length === 0 || submitting}
+                  type="submit"
+                >
                   {submitting
                     ? t("common.saving")
-                    : t(kind === "WORK_PACKAGE" ? "structure.createPackageAction" : "structure.createActionAction")}
+                    : t(
+                        kind === "WORK_PACKAGE"
+                          ? "structure.createPackageAction"
+                          : "structure.createActionAction",
+                      )}
                 </button>
               </footer>
             </form>

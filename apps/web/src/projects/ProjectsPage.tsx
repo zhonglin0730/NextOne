@@ -26,6 +26,9 @@ export function ProjectsPage() {
   const [submitting, setSubmitting] = useState(false);
   const [startingTaskId, setStartingTaskId] = useState<string>();
   const [error, setError] = useState("");
+  const [showWorkflowGuide, setShowWorkflowGuide] = useState(
+    () => window.localStorage.getItem("nextone.project-workflow.dismissed") !== "1",
+  );
   const createSubmittingRef = useRef(false);
 
   const load = useCallback(async () => {
@@ -103,6 +106,11 @@ export function ProjectsPage() {
     }
   };
 
+  const dismissWorkflowGuide = () => {
+    window.localStorage.setItem("nextone.project-workflow.dismissed", "1");
+    setShowWorkflowGuide(false);
+  };
+
   const formatter = new Intl.DateTimeFormat(i18n.resolvedLanguage ?? "zh-CN", {
     dateStyle: "medium",
   });
@@ -133,13 +141,50 @@ export function ProjectsPage() {
         </div>
         <div className="page-header-actions">
           <Link className="button button-outline" to="/board">
-            {t("project.allTasks")}
+            {t("project.allTasksBoard")}
           </Link>
           <button className="button button-primary" onClick={openCreate} type="button">
             ＋ {t("project.create")}
           </button>
         </div>
       </header>
+
+      {showWorkflowGuide ? (
+        <section className="project-workflow-guide" aria-labelledby="project-workflow-title">
+          <div>
+            <p className="eyebrow">{t("project.workflowEyebrow")}</p>
+            <h2 id="project-workflow-title">{t("project.workflowTitle")}</h2>
+            <p>{t("project.workflowDescription")}</p>
+          </div>
+          <ol>
+            {(
+              [
+                ["capture", "/inbox"],
+                ["project", "/projects"],
+                ["board", "/board"],
+                ["today", "/today"],
+                ["review", "/review"],
+              ] as const
+            ).map(([step, to], index) => (
+              <li key={step}>
+                <Link to={to}>
+                  <span>{index + 1}</span>
+                  {t(`project.workflow.${step}`)}
+                </Link>
+              </li>
+            ))}
+          </ol>
+          <button
+            aria-label={t("project.dismissWorkflow")}
+            className="project-workflow-dismiss"
+            onClick={dismissWorkflowGuide}
+            title={t("project.dismissWorkflow")}
+            type="button"
+          >
+            ×
+          </button>
+        </section>
+      ) : null}
 
       {error.length > 0 ? <p className="page-error">{error}</p> : null}
 

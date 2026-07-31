@@ -15,6 +15,7 @@ import {
   tasksChangedEvent,
 } from "../tasks/taskService";
 import { getDateOnly, getLocalDate, getTimeZone } from "../today/date";
+import { ProjectViewNav } from "../projects/ProjectViewNav";
 
 type VisibleBoardColumn = Exclude<BoardColumn, "SOMEDAY"> | "COMPLETED";
 
@@ -31,6 +32,8 @@ export function BoardPage() {
   const [wipLimit, setWipLimit] = useState(3);
   const [error, setError] = useState("");
   const [feedback, setFeedback] = useState("");
+  const [draggedTaskId, setDraggedTaskId] = useState<string>();
+  const [dragOverColumn, setDragOverColumn] = useState<VisibleBoardColumn>();
   const localDate = useMemo(() => getLocalDate(), []);
 
   const load = useCallback(async () => {
@@ -65,7 +68,11 @@ export function BoardPage() {
   const confirmOverride = (limit: number) =>
     window.confirm(`${t("wip.title", { limit })}\n\n${t("wip.confirm")}`);
 
-  const moveTask = async (taskId: string, column: BoardColumn) => {
+  const moveTask = async (
+    taskId: string,
+    column: BoardColumn,
+    options: { openWaitingDetails?: boolean } = {},
+  ) => {
     try {
       const current = tasks.find((task) => task.id === taskId);
 
@@ -74,7 +81,10 @@ export function BoardPage() {
       }
 
       try {
-        await taskApplicationService.moveToBoardColumn(current.id, column);
+        const updated = await taskApplicationService.moveToBoardColumn(current.id, column);
+        if (column === "WAITING" && options.openWaitingDetails) {
+          setSelectedTask(updated);
+        }
       } catch (error) {
         if (!(error instanceof WipLimitExceededError)) {
           throw error;
@@ -84,9 +94,12 @@ export function BoardPage() {
           return;
         }
 
-        await taskApplicationService.moveToBoardColumn(current.id, column, {
+        const updated = await taskApplicationService.moveToBoardColumn(current.id, column, {
           allowWipOverride: true,
         });
+        if (column === "WAITING" && options.openWaitingDetails) {
+          setSelectedTask(updated);
+        }
       }
       if ((column === "WAITING" || column === "SOMEDAY") && todayTaskIds.has(current.id)) {
         await taskApplicationService.removeFromToday(current.id, localDate);
@@ -157,11 +170,19 @@ export function BoardPage() {
   const handleDragStart = (event: DragEvent, taskId: string) => {
     event.dataTransfer.setData("text/plain", taskId);
     event.dataTransfer.effectAllowed = "move";
+    setDraggedTaskId(taskId);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedTaskId(undefined);
+    setDragOverColumn(undefined);
   };
 
   const handleDrop = (event: DragEvent, column: VisibleBoardColumn) => {
     event.preventDefault();
     const taskId = event.dataTransfer.getData("text/plain");
+    setDraggedTaskId(undefined);
+    setDragOverColumn(undefined);
     if (taskId.length > 0) {
       if (column === "COMPLETED") {
         const task = tasks.find((candidate) => candidate.id === taskId);
@@ -169,7 +190,7 @@ export function BoardPage() {
           void transition(task, "COMPLETED");
         }
       } else {
-        void moveTask(taskId, column);
+        void moveTask(taskId, column, { openWaitingDetails: column === "WAITING" });
       }
     }
   };
@@ -188,7 +209,7 @@ export function BoardPage() {
           {projectId === undefined ? (
             <p className="eyebrow">{t("board.secondaryEyebrow")}</p>
           ) : (
-            <Link className="project-back-link board-project-back" to={`/projects/${projectId}`}>
+            <Link className="project-back-link board-project-back" to="/projects">
               ← {t("project.back")}
             </Link>
           )}
@@ -211,6 +232,8 @@ export function BoardPage() {
         </div>
       </header>
 
+      {projectId === undefined ? null : <ProjectViewNav projectId={projectId} />}
+
       {error.length > 0 ? <p className="page-error">{error}</p> : null}
       <ActionToast message={feedback} onDismiss={() => setFeedback("")} />
       <p className="board-hint">{t("board.dragHint")}</p>
@@ -220,8 +243,11 @@ export function BoardPage() {
           const columnTasks = tasksForColumn(column);
           return (
             <section
-              className={`board-column board-column-${column.toLowerCase()}`}
+              className={`board-column board-column-${column.toLowerCase()} ${
+                dragOverColumn === column ? "board-column-drag-over" : ""
+              }`}
               key={column}
+              onDragEnter={() => setDragOverColumn(column)}
               onDragOver={(event) => event.preventDefault()}
               onDrop={(event) => handleDrop(event, column)}
             >
@@ -235,11 +261,21 @@ export function BoardPage() {
                 ) : (
                   columnTasks.map((task) => (
                     <article
-                      className="board-card"
-                      draggable={column !== "COMPLETED"}
+                      className={`board-card ${
+                        draggedTaskId === task.id ? "board-card-dragging" : ""
+                      }`}
                       key={task.id}
-                      onDragStart={(event) => handleDragStart(event, task.id)}
                     >
+                      <span
+                        aria-hidden="true"
+                        className="board-card-drag-handle"
+                        draggable
+                        onDragEnd={handleDragEnd}
+                        onDragStart={(event) => handleDragStart(event, task.id)}
+                        title={t("board.dragTask", { title: task.title })}
+                      >
+                        ⠿
+                      </span>
                       <button
                         className="board-card-title"
                         onClick={() => setSelectedTask(task)}
@@ -334,16 +370,6 @@ export function BoardPage() {
                               : t("board.addToday")}
                           </button>
                         ) : null}
-                        {column === "DOING" ? (
-                          <button onClick={() => void transition(task, "READY")} type="button">
-                            {t("action.pause")}
-                          </button>
-                        ) : null}
-                        {column === "WAITING" ? (
-                          <button onClick={() => void moveTask(task.id, "READY")} type="button">
-                            {t("action.READY")}
-                          </button>
-                        ) : null}
                         {column !== "COMPLETED" ? (
                           <details className="board-card-more">
                             <summary
@@ -359,6 +385,22 @@ export function BoardPage() {
                                   type="button"
                                 >
                                   {t("action.WAITING")}
+                                </button>
+                              ) : null}
+                              {column === "DOING" ? (
+                                <button
+                                  onClick={() => void transition(task, "READY")}
+                                  type="button"
+                                >
+                                  {t("action.pause")}
+                                </button>
+                              ) : null}
+                              {column === "WAITING" ? (
+                                <button
+                                  onClick={() => void moveTask(task.id, "READY")}
+                                  type="button"
+                                >
+                                  {t("action.READY")}
                                 </button>
                               ) : null}
                               <button

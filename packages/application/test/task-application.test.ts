@@ -576,6 +576,25 @@ describe("task application service", () => {
     expect(restored.visibility).toBe("ACTIVE");
   });
 
+  it("reopens completed tasks before moving them to another board column", async () => {
+    const state = createMemoryDatabase();
+    const service = createService(state.database);
+    const captured = await service.capture({ title: "重新推进已完成任务" });
+    await service.transition(captured.id, "READY");
+    await service.transition(captured.id, "COMPLETED");
+
+    const doing = await service.moveToBoardColumn(captured.id, "DOING");
+
+    expect(doing.status).toBe("DOING");
+    expect(doing.completedAt).toBeUndefined();
+
+    await service.transition(captured.id, "COMPLETED");
+    const waiting = await service.moveToBoardColumn(captured.id, "WAITING");
+
+    expect(waiting.status).toBe("WAITING");
+    expect(waiting.completedAt).toBeUndefined();
+  });
+
   it("reactivates a snoozed task when the user explicitly adds it to today", async () => {
     const state = createMemoryDatabase();
     const service = createService(state.database);

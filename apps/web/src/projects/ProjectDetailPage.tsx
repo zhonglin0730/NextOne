@@ -15,6 +15,7 @@ import {
 } from "../tasks/taskService";
 import { getDateOnly, getLocalDate, getTimeZone, getWeekStartsAt } from "../today/date";
 import { ProjectProgress } from "./ProjectProgress";
+import { ProjectViewNav } from "./ProjectViewNav";
 
 interface ProjectTaskRowProps {
   busy?: boolean;
@@ -248,14 +249,10 @@ export function ProjectDetailPage() {
           >
             {overview.needsFocusDecision ? t("project.needsDecision") : t("project.active")}
           </span>
-          <Link className="button button-primary" to={`/projects/${overview.project.id}/structure`}>
-            {t("project.structureView")}
-          </Link>
-          <Link className="button button-outline" to={`/projects/${overview.project.id}/board`}>
-            {t("project.boardView")}
-          </Link>
         </div>
       </header>
+
+      <ProjectViewNav projectId={overview.project.id} />
 
       {error.length > 0 ? <p className="page-error">{error}</p> : null}
       <ActionToast message={feedback} onDismiss={() => setFeedback("")} />

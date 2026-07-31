@@ -209,80 +209,93 @@ export function ReviewCenterPage() {
                   <p>{t(`status.${task.status}`)}</p>
                 </div>
                 <div className="review-actions">
+                  <span className="review-recommended-label">{t("review.recommendedAction")}</span>
                   {task.status === "READY" ? (
-                    <>
-                      <button
-                        className="button button-primary button-small"
-                        onClick={() => void addToday(task)}
-                        type="button"
-                      >
-                        {t("task.addToday")}
-                      </button>
-                      <button
-                        className="button button-outline button-small"
-                        onClick={() => void transition(task, "DOING")}
-                        type="button"
-                      >
-                        {t("action.DOING")}
-                      </button>
-                      <button
-                        className="button button-quiet button-small"
-                        onClick={() => void keepReady(task)}
-                        title={t("review.keepReadyDescription")}
-                        type="button"
-                      >
-                        {t("review.keepReady")}
-                      </button>
-                    </>
+                    <button
+                      className="button button-primary button-small"
+                      onClick={() => void addToday(task)}
+                      type="button"
+                    >
+                      {t("task.addToday")}
+                    </button>
                   ) : null}
                   {task.status === "DOING" ? (
-                    <>
-                      <button
-                        className="button button-primary button-small"
-                        onClick={() => void addToday(task)}
-                        type="button"
-                      >
-                        {t("task.addToday")}
-                      </button>
-                      <button
-                        className="button button-outline button-small"
-                        onClick={() => void acknowledge(task, "review.feedback.continueDoing")}
-                        type="button"
-                      >
-                        {t("review.continueDoing")}
-                      </button>
-                    </>
+                    <button
+                      className="button button-primary button-small"
+                      onClick={() => void acknowledge(task, "review.feedback.continueDoing")}
+                      type="button"
+                    >
+                      {t("review.continueDoing")}
+                    </button>
                   ) : null}
                   {task.status === "WAITING" ? (
-                    <>
+                    task.waitingFor === undefined || task.reviewAt === undefined ? (
                       <button
-                        className="button button-quiet button-small"
+                        className="button button-primary button-small"
                         onClick={() => setSelectedTask(task)}
                         type="button"
                       >
-                        {task.waitingFor === undefined || task.reviewAt === undefined
-                          ? t("task.setFollowUp")
-                          : t("task.editFollowUp")}
+                        {t("task.setFollowUp")}
                       </button>
+                    ) : (
                       <button
                         className="button button-primary button-small"
-                        onClick={() => void transition(task, "READY")}
-                        type="button"
-                      >
-                        {t("review.resumeReady")}
-                      </button>
-                      <button
-                        className="button button-outline button-small"
                         onClick={() => void acknowledge(task, "review.feedback.continueWaiting")}
                         type="button"
                       >
                         {t("review.continueWaiting")}
                       </button>
-                    </>
+                    )
                   ) : null}
                   <details className="review-more-actions">
-                    <summary>{t("review.moreActions")}</summary>
+                    <summary>{t("review.otherChoices")}</summary>
                     <div>
+                      {task.status === "READY" ? (
+                        <>
+                          <button
+                            className="button button-outline button-small"
+                            onClick={() => void transition(task, "DOING")}
+                            type="button"
+                          >
+                            {t("action.DOING")}
+                          </button>
+                          <button
+                            className="button button-quiet button-small"
+                            onClick={() => void keepReady(task)}
+                            title={t("review.keepReadyDescription")}
+                            type="button"
+                          >
+                            {t("review.keepReady")}
+                          </button>
+                        </>
+                      ) : null}
+                      {task.status === "DOING" ? (
+                        <button
+                          className="button button-outline button-small"
+                          onClick={() => void addToday(task)}
+                          type="button"
+                        >
+                          {t("task.addToday")}
+                        </button>
+                      ) : null}
+                      {task.status === "WAITING" ? (
+                        <>
+                          <button
+                            className="button button-outline button-small"
+                            onClick={() => void transition(task, "READY")}
+                            type="button"
+                          >
+                            {t("review.resumeReady")}
+                          </button>
+                          <button
+                            className="button button-quiet button-small"
+                            onClick={() => setSelectedTask(task)}
+                            type="button"
+                          >
+                            {t("task.editFollowUp")}
+                          </button>
+                        </>
+                      ) : null}
                       {task.status !== "WAITING" ? (
                         <button
                           className="button button-quiet button-small"
@@ -306,31 +319,34 @@ export function ReviewCenterPage() {
                       >
                         {t("action.CANCELED")}
                       </button>
+                      <div className="review-date-action">
+                        <div className="review-date-copy">
+                          <strong>{t("review.remindLater")}</strong>
+                          <span>{t("review.reviewDateDescription")}</span>
+                        </div>
+                        <input
+                          aria-label={t("review.setReviewDate")}
+                          min={getLocalDate()}
+                          onChange={(event) =>
+                            setReviewDates((current) => ({
+                              ...current,
+                              [task.id]: event.target.value,
+                            }))
+                          }
+                          type="date"
+                          value={reviewDates[task.id] ?? ""}
+                        />
+                        <button
+                          className="button button-outline button-small"
+                          disabled={(reviewDates[task.id] ?? "").length === 0}
+                          onClick={() => void setReviewDate(task)}
+                          type="button"
+                        >
+                          {t("review.setReviewDate")}
+                        </button>
+                      </div>
                     </div>
                   </details>
-                </div>
-                <div className="review-date-action">
-                  <div className="review-date-copy">
-                    <strong>{t("review.remindLater")}</strong>
-                    <span>{t("review.reviewDateDescription")}</span>
-                  </div>
-                  <input
-                    aria-label={t("review.setReviewDate")}
-                    min={getLocalDate()}
-                    onChange={(event) =>
-                      setReviewDates((current) => ({ ...current, [task.id]: event.target.value }))
-                    }
-                    type="date"
-                    value={reviewDates[task.id] ?? ""}
-                  />
-                  <button
-                    className="button button-outline button-small"
-                    disabled={(reviewDates[task.id] ?? "").length === 0}
-                    onClick={() => void setReviewDate(task)}
-                    type="button"
-                  >
-                    {t("review.setReviewDate")}
-                  </button>
                 </div>
               </article>
             ))}

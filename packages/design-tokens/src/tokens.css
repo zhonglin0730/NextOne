@@ -45,9 +45,16 @@
   --nextone-radius-small: 8px;
   --nextone-radius-medium: 12px;
   --nextone-radius-large: 18px;
+  --nextone-radius-panel: 18px;
   --nextone-space-xs: 4px;
   --nextone-space-sm: 8px;
   --nextone-space-md: 16px;
   --nextone-space-lg: 24px;
   --nextone-space-xl: 32px;
+  --nextone-content-standard: 1040px;
+  --nextone-content-wide: 1180px;
+  --nextone-content-board: 1380px;
+  --nextone-control-target: 38px;
+  --nextone-shadow-card: 0 12px 36px rgb(30 40 70 / 5%);
+  --nextone-shadow-elevated: 0 18px 48px rgb(30 40 70 / 8%);
 }
