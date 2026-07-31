@@ -16,12 +16,14 @@
     "format:check": "prettier --check .",
     "format:write": "prettier --write .",
     "test": "pnpm -r --if-present test",
+    "test:e2e": "playwright test",
     "server:run": "mvn -pl apps/server spring-boot:run",
     "server:test": "mvn -pl apps/server test",
     "db:up": "docker compose -f deploy/compose/compose.dev.yml up -d",
     "db:down": "docker compose -f deploy/compose/compose.dev.yml down"
   },
   "devDependencies": {
+    "@playwright/test": "1.62.1",
     "prettier": "^3.6.2",
     "typescript": "^5.9.3",
     "vitest": "^4.0.0"

@@ -264,14 +264,14 @@ export function BoardPage() {
                       className={`board-card ${
                         draggedTaskId === task.id ? "board-card-dragging" : ""
                       }`}
+                      draggable
                       key={task.id}
+                      onDragEnd={handleDragEnd}
+                      onDragStart={(event) => handleDragStart(event, task.id)}
                     >
                       <span
                         aria-hidden="true"
                         className="board-card-drag-handle"
-                        draggable
-                        onDragEnd={handleDragEnd}
-                        onDragStart={(event) => handleDragStart(event, task.id)}
                         title={t("board.dragTask", { title: task.title })}
                       >
                         ⠿
