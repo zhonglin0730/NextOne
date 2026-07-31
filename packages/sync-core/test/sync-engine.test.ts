@@ -63,6 +63,11 @@ function memoryDatabase(initialMutation?: OutboxMutation) {
       list: async () => [],
       save: async () => undefined,
     },
+    workPackages: {
+      findById: async () => undefined,
+      list: async () => [],
+      save: async () => undefined,
+    },
     taskEvents: {
       listByTaskId: async () => [],
       listAll: async () => [],
@@ -193,6 +198,8 @@ describe("SyncEngine", () => {
     expect(memory.outbox.get("mutation-1")?.status).toBe("BLOCKED");
     expect(memory.tasks.get("task-1")?.title).toBe("Write acceptance notes");
     expect(memory.conflicts.get("mutation-1")?.code).toBe("REVISION_CONFLICT");
+    expect(summary.state.status).toBe("ERROR");
+    expect(summary.blockedCount).toBe(1);
     expect(summary.conflictCount).toBe(1);
   });
 

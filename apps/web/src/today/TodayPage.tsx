@@ -1,4 +1,4 @@
-import type { TodayTask, TodayView } from "@nextone/application";
+import type { TodayView } from "@nextone/application";
 import type { Task } from "@nextone/domain";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -33,7 +33,10 @@ function candidateRank(task: Task): number {
 
 function sortKickoffCandidates(tasks: readonly Task[]): readonly Task[] {
   return [...new Map(tasks.map((task) => [task.id, task])).values()]
-    .filter((task) => task.status === "INBOX" || task.status === "READY")
+    .filter(
+      (task) =>
+        task.status === "INBOX" || task.status === "READY" || task.status === "DOING",
+    )
     .sort(
       (left, right) =>
         candidateRank(left) - candidateRank(right) ||
@@ -43,32 +46,36 @@ function sortKickoffCandidates(tasks: readonly Task[]): readonly Task[] {
     .slice(0, 18);
 }
 
+interface TodayCommitment {
+  task: Task;
+}
+
 function TodayTaskCard({
-  entry,
+  commitment,
   isCompleting,
   onComplete,
   onOpen,
   onRemove,
   onTransition,
-  variant,
+  onZen,
 }: {
-  entry: TodayTask;
+  commitment: TodayCommitment;
   isCompleting: boolean;
   onComplete: (task: Task) => void;
   onOpen: (task: Task) => void;
   onRemove: (task: Task) => void;
   onTransition: (task: Task, status: TodayTransitionStatus) => void;
-  variant: "focus" | "later";
+  onZen: (task: Task) => void;
 }) {
   const { t } = useTranslation();
-  const { task } = entry;
+  const { task } = commitment;
 
   return (
     <article
-      className={`today-task-card today-task-card-${variant} ${isCompleting ? "task-completing" : ""}`}
+      className={`today-task-card today-task-card-focus ${task.status === "DOING" ? "today-task-card-doing" : ""} ${isCompleting ? "task-completing" : ""}`}
     >
       <div className="task-card-main">
-        {variant === "focus" && task.status !== "INBOX" ? (
+        {task.status !== "INBOX" ? (
           <button
             aria-label={t("action.completeTask", { title: task.title })}
             className="task-checkbox"
@@ -92,7 +99,9 @@ function TodayTaskCard({
             </button>
           </h3>
           {task.estimateMinutes === undefined ? null : (
-            <p>{t("today.minutes", { count: task.estimateMinutes })}</p>
+            <p className="task-meta">
+              {t("today.minutes", { count: task.estimateMinutes })}
+            </p>
           )}
         </div>
       </div>
@@ -115,6 +124,15 @@ function TodayTaskCard({
             {t("action.DOING")}
           </button>
         ) : null}
+        {task.status === "DOING" ? (
+          <button
+            className="button button-primary button-small"
+            onClick={() => onZen(task)}
+            type="button"
+          >
+            {t("zen.open")}
+          </button>
+        ) : null}
         <div className="card-actions-secondary">
           {task.status === "DOING" ? (
             <button
@@ -132,18 +150,6 @@ function TodayTaskCard({
               type="button"
             >
               {t("action.WAITING")}
-            </button>
-          ) : null}
-          {variant === "later" && task.status !== "INBOX" ? (
-            <button
-              aria-label={t("action.completeTask", { title: task.title })}
-              className="button button-quiet button-small"
-              disabled={isCompleting}
-              onClick={() => onComplete(task)}
-              title={t("action.completeTask", { title: task.title })}
-              type="button"
-            >
-              {t("action.COMPLETED")}
             </button>
           ) : null}
           <button
@@ -164,6 +170,7 @@ export function TodayPage() {
   const localDate = useMemo(() => getLocalDate(), []);
   const [view, setView] = useState<TodayView>({
     plan: undefined,
+    planned: [],
     focus: [],
     later: [],
     doing: [],
@@ -189,7 +196,7 @@ export function TodayPage() {
         taskApplicationService.listBoardTasks(),
         loadPreferences(),
       ]);
-      const plannedIds = new Set([...today.focus, ...today.later].map(({ task }) => task.id));
+      const plannedIds = new Set(today.planned.map(({ task }) => task.id));
       const candidates = sortKickoffCandidates(
         [...inbox, ...board].filter((task) => !plannedIds.has(task.id)),
       );
@@ -199,8 +206,7 @@ export function TodayPage() {
       setFocusLimit(preferences.focusLimit);
       setWipLimit(preferences.wipLimit);
       if (
-        today.focus.length === 0 &&
-        today.doing.length === 0 &&
+        today.planned.length === 0 &&
         candidates.length > 0 &&
         localStorage.getItem(kickoffStorageKey) === null
       ) {
@@ -318,13 +324,15 @@ export function TodayPage() {
     }
   };
 
+  const commitments = useMemo<readonly TodayCommitment[]>(() => {
+    return view.planned.map(({ task }) => ({ task }));
+  }, [view.planned]);
+  const doingCommitmentCount = commitments.filter(
+    ({ task }) => task.status === "DOING",
+  ).length;
   const capacityTasks = useMemo(
-    () => [
-      ...view.focus.map(({ task }) => task),
-      ...view.later.map(({ task }) => task),
-      ...view.doing,
-    ],
-    [view.doing, view.focus, view.later],
+    () => commitments.map(({ task }) => task),
+    [commitments],
   );
 
   const dateFormatter = new Intl.DateTimeFormat(i18n.resolvedLanguage ?? "zh-CN", {
@@ -352,23 +360,28 @@ export function TodayPage() {
       {error.length > 0 ? <p className="page-error">{error}</p> : null}
       <ActionToast message={feedback} onDismiss={() => setFeedback("")} />
 
+      <DailyCapacity capacityMinutes={dailyCapacityMinutes} tasks={capacityTasks} />
+
       <div className="today-grid">
-        <section className="today-section today-focus" aria-labelledby="focus-title">
+        <section className="today-section today-planned" aria-labelledby="commitments-title">
           <header className="section-heading">
             <div>
-              <h2 id="focus-title">{t("today.focus")}</h2>
-              <p>{t("today.focusDescription", { limit: focusLimit })}</p>
+              <h2 id="commitments-title">{t("today.commitments")}</h2>
+              <p>{t("today.commitmentsDescription")}</p>
             </div>
-            <span className="count-pill">
-              {t("today.focusCount", { count: view.focus.length, limit: focusLimit })}
+            <span
+              className="count-pill"
+              title={t("today.doingCount", { count: doingCommitmentCount, limit: wipLimit })}
+            >
+              {commitments.length}
             </span>
           </header>
           {loading ? (
             <div className="mini-skeleton" />
-          ) : view.focus.length === 0 ? (
+          ) : commitments.length === 0 ? (
             <div className="section-empty">
-              <strong>{t("today.emptyFocus")}</strong>
-              <p>{t("today.emptyFocusDescription")}</p>
+              <strong>{t("today.emptyPlanned")}</strong>
+              <p>{t("today.emptyPlannedDescription")}</p>
               <div className="section-empty-actions">
                 {kickoffCandidates.length > 0 ? (
                   <button
@@ -380,120 +393,22 @@ export function TodayPage() {
                   </button>
                 ) : null}
                 <Link className="button button-outline" to="/board">
-                  {t("today.openBoard")}
+                  {t("today.openBoardForToday")}
                 </Link>
               </div>
             </div>
           ) : (
             <div className="today-task-list">
-              {view.focus.map((entry) => (
+              {commitments.map((commitment) => (
                 <TodayTaskCard
-                  entry={entry}
-                  isCompleting={completingIds.has(entry.task.id)}
-                  key={entry.item.id}
+                  commitment={commitment}
+                  isCompleting={completingIds.has(commitment.task.id)}
+                  key={commitment.task.id}
                   onComplete={(task) => void handleComplete(task)}
                   onOpen={setSelectedTask}
                   onRemove={(task) => void remove(task)}
                   onTransition={(task, status) => void transition(task, status)}
-                  variant="focus"
-                />
-              ))}
-            </div>
-          )}
-          <DailyCapacity capacityMinutes={dailyCapacityMinutes} tasks={capacityTasks} />
-        </section>
-
-        <section className="today-section today-doing" aria-labelledby="doing-title">
-          <header className="section-heading">
-            <div>
-              <h2 id="doing-title">{t("today.doing")}</h2>
-              <p>{t("today.doingDescription")}</p>
-            </div>
-            <span className="count-pill">
-              {view.doing.length}/{wipLimit}
-            </span>
-          </header>
-          {view.doing.length === 0 ? (
-            <p className="inline-empty">{t("today.emptyDoing")}</p>
-          ) : (
-            <div className="doing-list">
-              {view.doing.map((task) => (
-                <article
-                  className={`doing-row ${completingIds.has(task.id) ? "task-completing" : ""}`}
-                  key={task.id}
-                >
-                  <button
-                    aria-label={t("action.completeTask", { title: task.title })}
-                    className="task-checkbox"
-                    disabled={completingIds.has(task.id)}
-                    onClick={() => void handleComplete(task)}
-                    title={t("action.completeTask", { title: task.title })}
-                    type="button"
-                  >
-                    <span aria-hidden="true" className="checkbox-inner">
-                      ✓
-                    </span>
-                  </button>
-                  <span aria-hidden="true" className="doing-indicator" />
-                  <button
-                    className="today-doing-title"
-                    onClick={() => setSelectedTask(task)}
-                    type="button"
-                  >
-                    {task.title}
-                  </button>
-                  <div className="card-actions">
-                    <button
-                      className="button button-quiet button-small"
-                      onClick={() => setZenTask(task)}
-                      type="button"
-                    >
-                      {t("zen.open")}
-                    </button>
-                    <div className="card-actions-secondary">
-                      <button
-                        className="button button-quiet button-small"
-                        onClick={() => void transition(task, "READY")}
-                        type="button"
-                      >
-                        {t("action.pause")}
-                      </button>
-                      <button
-                        className="button button-quiet button-small"
-                        onClick={() => void transition(task, "WAITING")}
-                        type="button"
-                      >
-                        {t("action.WAITING")}
-                      </button>
-                    </div>
-                  </div>
-                </article>
-              ))}
-            </div>
-          )}
-        </section>
-
-        <section className="today-section today-later" aria-labelledby="later-title">
-          <header className="section-heading">
-            <div>
-              <h2 id="later-title">{t("today.later")}</h2>
-              <p>{t("today.laterDescription")}</p>
-            </div>
-          </header>
-          {view.later.length === 0 ? (
-            <p className="inline-empty">{t("today.emptyLater")}</p>
-          ) : (
-            <div className="today-task-list">
-              {view.later.map((entry) => (
-                <TodayTaskCard
-                  entry={entry}
-                  isCompleting={completingIds.has(entry.task.id)}
-                  key={entry.item.id}
-                  onComplete={(task) => void handleComplete(task)}
-                  onOpen={setSelectedTask}
-                  onRemove={(task) => void remove(task)}
-                  onTransition={(task, status) => void transition(task, status)}
-                  variant="later"
+                  onZen={setZenTask}
                 />
               ))}
             </div>

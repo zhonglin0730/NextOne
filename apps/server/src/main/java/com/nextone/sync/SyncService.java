@@ -3,20 +3,18 @@ package com.nextone.sync;
 import com.nextone.common.ApiException;
 import com.nextone.event.TaskEventRepository;
 import com.nextone.project.ProjectRepository;
-import com.nextone.project.ProjectStatus;
 import com.nextone.project.ProjectView;
 import com.nextone.task.TaskRepository;
-import com.nextone.task.TaskKind;
 import com.nextone.task.TaskStatus;
 import com.nextone.task.TaskView;
+import com.nextone.workpackage.WorkPackageRepository;
+import com.nextone.workpackage.WorkPackageView;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.Set;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -34,6 +32,7 @@ public class SyncService {
     private final SyncRepository syncRepository;
     private final TaskRepository tasks;
     private final ProjectRepository projects;
+    private final WorkPackageRepository workPackages;
     private final TaskEventRepository events;
     private final JdbcTemplate jdbcTemplate;
     private final JsonMapper jsonMapper;
@@ -43,6 +42,7 @@ public class SyncService {
             SyncRepository syncRepository,
             TaskRepository tasks,
             ProjectRepository projects,
+            WorkPackageRepository workPackages,
             TaskEventRepository events,
             JdbcTemplate jdbcTemplate,
             JsonMapper jsonMapper,
@@ -51,6 +51,7 @@ public class SyncService {
         this.syncRepository = syncRepository;
         this.tasks = tasks;
         this.projects = projects;
+        this.workPackages = workPackages;
         this.events = events;
         this.jdbcTemplate = jdbcTemplate;
         this.jsonMapper = jsonMapper;
@@ -108,6 +109,7 @@ public class SyncService {
         SyncDtos.MutationResult result = switch (mutation.entityType()) {
             case "TASK" -> applyTask(userId, mutation);
             case "PROJECT" -> applyProject(userId, mutation);
+            case "WORK_PACKAGE" -> applyWorkPackage(userId, mutation);
             case "DAILY_PLAN" -> applyDailyPlan(userId, mutation);
             case "DAILY_PLAN_ITEM" -> applyDailyPlanItem(userId, mutation);
             default -> rejected(mutation, "SYNC_ENTITY_TYPE_UNSUPPORTED");
@@ -142,7 +144,7 @@ public class SyncService {
                 return rejected(mutation, "TASK_CREATE_STATUS_INVALID");
             }
             if (!projectIsValid(userId, incoming.projectId())
-                    || !structureParentIsValid(userId, incoming)) {
+                    || !workPackageIsValid(userId, incoming.projectId(), incoming.workPackageId())) {
                 return rejected(mutation, "PROJECT_NOT_FOUND");
             }
             TaskView created = taskWithRevision(incoming, userId, 1, incoming.createdAt());
@@ -175,12 +177,8 @@ public class SyncService {
             return rejected(mutation, "TASK_TRANSITION_INVALID");
         }
         if (!projectIsValid(userId, incoming.projectId())
-                || !structureParentIsValid(userId, incoming)) {
+                || !workPackageIsValid(userId, incoming.projectId(), incoming.workPackageId())) {
             return rejected(mutation, "PROJECT_NOT_FOUND");
-        }
-        if (stored.kind() == TaskKind.WORK_PACKAGE
-                && !(stored.status() == TaskStatus.INBOX && target == TaskStatus.READY)) {
-            return rejected(mutation, "TASK_WORK_PACKAGE_TRANSITION_INVALID");
         }
         if (target == TaskStatus.DOING && stored.status() != TaskStatus.DOING) {
             tasks.lockWipDecision(userId);
@@ -194,8 +192,7 @@ public class SyncService {
                 stored.id(),
                 userId,
                 incoming.projectId(),
-                incoming.parentTaskId(),
-                incoming.kind(),
+                incoming.workPackageId(),
                 incoming.title(),
                 incoming.note(),
                 target,
@@ -235,16 +232,6 @@ public class SyncService {
                 ),
                 mutation.occurredAt()
         );
-        if (merged.status().terminal()
-                && tasks.clearProjectFocusForTask(userId, merged.id(), mutation.occurredAt())) {
-            events.append(
-                    userId,
-                    merged.id(),
-                    "PROJECT_FOCUS_CLEARED",
-                    Map.of(),
-                    mutation.occurredAt()
-            );
-        }
         return appliedChange(
                 userId,
                 mutation,
@@ -339,18 +326,12 @@ public class SyncService {
             ObjectNode normalized = (ObjectNode) mutation.payload().deepCopy();
             normalized.put("userId", userId);
             normalized.remove(List.of("areaId", "deletedAt"));
-            if (!normalized.hasNonNull("kind")) {
-                normalized.put("kind", "ACTION");
-            }
             incoming = jsonMapper.treeToValue(normalized, ProjectView.class);
         } catch (JacksonException | ClassCastException exception) {
             return rejected(mutation, "SYNC_PAYLOAD_INVALID");
         }
         if (!incoming.id().equals(mutation.entityId()) || incoming.name().isBlank()) {
             return rejected(mutation, "SYNC_PAYLOAD_INVALID");
-        }
-        if (!focusIsValid(userId, incoming.id(), incoming.focusTaskId())) {
-            return rejected(mutation, "PROJECT_FOCUS_TASK_INVALID");
         }
         if (current.isEmpty()) {
             if (mutation.baseRevision() != 0) {
@@ -381,13 +362,127 @@ public class SyncService {
                 incoming.name(),
                 incoming.note(),
                 incoming.status(),
-                incoming.status() == ProjectStatus.ACTIVE ? incoming.focusTaskId() : null,
                 incoming.sortKey(),
                 stored.createdAt(),
                 later(stored.updatedAt(), incoming.updatedAt()),
                 stored.revision() + 1
         );
         projects.update(updated);
+        return appliedChange(
+                userId,
+                mutation,
+                updated.revision(),
+                jsonMapper.valueToTree(updated),
+                mutation.occurredAt()
+        );
+    }
+
+    private SyncDtos.MutationResult applyWorkPackage(
+            String userId,
+            SyncDtos.MutationRequest mutation
+    ) {
+        Optional<WorkPackageView> current = workPackages.findById(
+                userId,
+                mutation.entityId()
+        );
+        if ("DELETE".equals(mutation.operation())) {
+            if (current.isEmpty()) {
+                return appliedWithoutChange(mutation, mutation.baseRevision());
+            }
+            WorkPackageView stored = current.get();
+            if (mutation.baseRevision() != stored.revision()) {
+                return conflict(
+                        mutation,
+                        jsonMapper.valueToTree(stored),
+                        "DELETE_CONFLICT"
+                );
+            }
+            long revision = stored.revision() + 1;
+            jdbcTemplate.update("""
+                    UPDATE work_package
+                    SET deleted_at = ?, updated_at = ?, revision = ?
+                    WHERE user_id = ? AND id = ? AND revision = ?
+                    """,
+                    mutation.occurredAt(),
+                    later(stored.updatedAt(), mutation.occurredAt()),
+                    revision,
+                    userId,
+                    stored.id(),
+                    stored.revision()
+            );
+            ObjectNode tombstone = jsonMapper.valueToTree(stored);
+            tombstone.put("deletedAt", mutation.occurredAt().toString());
+            tombstone.put("revision", revision);
+            return appliedChange(
+                    userId,
+                    mutation,
+                    revision,
+                    tombstone,
+                    mutation.occurredAt()
+            );
+        }
+        if (!"UPSERT".equals(mutation.operation()) || mutation.payload() == null) {
+            return rejected(mutation, "SYNC_OPERATION_INVALID");
+        }
+
+        WorkPackageView incoming;
+        try {
+            ObjectNode normalized = (ObjectNode) mutation.payload().deepCopy();
+            normalized.put("userId", userId);
+            incoming = jsonMapper.treeToValue(normalized, WorkPackageView.class);
+        } catch (JacksonException | ClassCastException exception) {
+            return rejected(mutation, "SYNC_PAYLOAD_INVALID");
+        }
+        if (!incoming.id().equals(mutation.entityId())
+                || incoming.title().isBlank()
+                || !projectIsValid(userId, incoming.projectId())
+                || incoming.projectId() == null
+                || !workPackageParentIsValid(userId, incoming)) {
+            return rejected(mutation, "SYNC_PAYLOAD_INVALID");
+        }
+
+        if (current.isEmpty()) {
+            if (mutation.baseRevision() != 0) {
+                return conflict(mutation, null, "REVISION_CONFLICT");
+            }
+            WorkPackageView created = workPackageWithRevision(
+                    incoming,
+                    userId,
+                    1,
+                    incoming.createdAt()
+            );
+            workPackages.insert(created);
+            return appliedChange(
+                    userId,
+                    mutation,
+                    1,
+                    jsonMapper.valueToTree(created),
+                    mutation.occurredAt()
+            );
+        }
+
+        WorkPackageView stored = current.get();
+        if (mutation.baseRevision() != stored.revision()) {
+            return conflict(
+                    mutation,
+                    jsonMapper.valueToTree(stored),
+                    "REVISION_CONFLICT"
+            );
+        }
+        WorkPackageView updated = new WorkPackageView(
+                stored.id(),
+                userId,
+                incoming.projectId(),
+                incoming.parentId(),
+                incoming.title(),
+                incoming.note(),
+                incoming.sortKey(),
+                stored.createdAt(),
+                later(stored.updatedAt(), incoming.updatedAt()),
+                null,
+                stored.revision() + 1
+        );
+        workPackages.update(updated);
         return appliedChange(
                 userId,
                 mutation,
@@ -501,7 +596,8 @@ public class SyncService {
                 || !List.of("FOCUS", "LATER").contains(section)
                 || !dailyPlanBelongsTo(userId, planId)
                 || tasks.findById(userId, taskId)
-                        .filter(task -> task.kind() == TaskKind.ACTION)
+                        .filter(task -> task.status() == TaskStatus.READY
+                                || task.status() == TaskStatus.DOING)
                         .isEmpty()) {
             return rejected(mutation, "SYNC_PAYLOAD_INVALID");
         }
@@ -654,8 +750,7 @@ public class SyncService {
                 source.id(),
                 userId,
                 source.projectId(),
-                source.parentTaskId(),
-                source.kind(),
+                source.workPackageId(),
                 source.title(),
                 source.note(),
                 source.status(),
@@ -688,10 +783,30 @@ public class SyncService {
                 source.name(),
                 source.note(),
                 source.status(),
-                source.focusTaskId(),
                 source.sortKey(),
                 createdAt,
                 source.updatedAt(),
+                revision
+        );
+    }
+
+    private WorkPackageView workPackageWithRevision(
+            WorkPackageView source,
+            String userId,
+            long revision,
+            OffsetDateTime createdAt
+    ) {
+        return new WorkPackageView(
+                source.id(),
+                userId,
+                source.projectId(),
+                source.parentId(),
+                source.title(),
+                source.note(),
+                source.sortKey(),
+                createdAt,
+                source.updatedAt(),
+                null,
                 revision
         );
     }
@@ -700,43 +815,35 @@ public class SyncService {
         return projectId == null || projects.findById(userId, projectId).isPresent();
     }
 
-    private boolean structureParentIsValid(String userId, TaskView task) {
-        if (task.parentTaskId() == null) {
+    private boolean workPackageIsValid(
+            String userId,
+            String projectId,
+            String workPackageId
+    ) {
+        if (workPackageId == null) {
             return true;
         }
-        if (task.projectId() == null) {
+        if (projectId == null) {
             return false;
         }
-
-        String cursorId = task.parentTaskId();
-        int parentDepth = 0;
-        Set<String> visited = new HashSet<>();
-        while (cursorId != null) {
-            if (cursorId.equals(task.id()) || !visited.add(cursorId)) {
-                return false;
-            }
-            Optional<TaskView> parent = tasks.findById(userId, cursorId);
-            if (parent.isEmpty()
-                    || parent.get().kind() != TaskKind.WORK_PACKAGE
-                    || !Objects.equals(parent.get().projectId(), task.projectId())) {
-                return false;
-            }
-            parentDepth += 1;
-            cursorId = parent.get().parentTaskId();
-        }
-        int maxLevel = task.kind() == TaskKind.WORK_PACKAGE ? 2 : 3;
-        return parentDepth + 1 <= maxLevel;
+        return workPackages.findById(userId, workPackageId)
+                .map(value -> Objects.equals(value.projectId(), projectId))
+                .orElse(false);
     }
 
-    private boolean focusIsValid(String userId, String projectId, String focusTaskId) {
-        if (focusTaskId == null) {
+    private boolean workPackageParentIsValid(
+            String userId,
+            WorkPackageView workPackage
+    ) {
+        if (workPackage.parentId() == null) {
             return true;
         }
-        return tasks.findById(userId, focusTaskId)
-                .map(task -> projectId.equals(task.projectId())
-                        && task.kind() == TaskKind.ACTION
-                        && task.status() != TaskStatus.INBOX
-                        && !task.status().terminal())
+        if (workPackage.parentId().equals(workPackage.id())) {
+            return false;
+        }
+        return workPackages.findById(userId, workPackage.parentId())
+                .map(parent -> Objects.equals(parent.projectId(), workPackage.projectId())
+                        && parent.parentId() == null)
                 .orElse(false);
     }
 

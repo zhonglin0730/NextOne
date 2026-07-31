@@ -98,6 +98,7 @@ export function DailyClosePage() {
       } else {
         await taskApplicationService.transition(entry.task.id, action);
       }
+      await taskApplicationService.removeFromToday(entry.task.id, localDate);
       if (action === "CANCELED") {
         setCanceled((current) => [...current, entry]);
       }

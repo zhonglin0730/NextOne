@@ -5,6 +5,8 @@ import { SettingsNav } from "../settings/SettingsNav";
 import {
   getSyncConfiguration,
   getSyncSummary,
+  listSyncConflicts,
+  resolveSyncConflict,
   saveSyncConfiguration,
   subscribeToSyncChanges,
   syncNow,
@@ -15,9 +17,21 @@ export function SyncStatusPage() {
   const { t } = useTranslation();
   const [configuration, setConfiguration] = useState<SyncConfiguration>(getSyncConfiguration);
   const [details, setDetails] = useState<Awaited<ReturnType<typeof getSyncSummary>>>();
+  const [conflicts, setConflicts] = useState<
+    Awaited<ReturnType<typeof listSyncConflicts>>
+  >([]);
+  const [resolvingId, setResolvingId] = useState<string>();
+  const [confirmingServerId, setConfirmingServerId] = useState<string>();
   const [tokenVisible, setTokenVisible] = useState(false);
 
-  const refresh = () => void getSyncSummary().then(setDetails);
+  const refresh = () => {
+    void Promise.all([getSyncSummary(), listSyncConflicts()]).then(
+      ([nextDetails, nextConflicts]) => {
+        setDetails(nextDetails);
+        setConflicts(nextConflicts);
+      },
+    );
+  };
   useEffect(() => {
     refresh();
     return subscribeToSyncChanges(refresh);
@@ -26,6 +40,28 @@ export function SyncStatusPage() {
   const saveAndSync = async () => {
     saveSyncConfiguration(configuration);
     await syncNow();
+  };
+
+  const resolve = async (conflictId: string, resolution: "KEEP_LOCAL" | "USE_SERVER") => {
+    setResolvingId(conflictId);
+    try {
+      await resolveSyncConflict(conflictId, resolution);
+      refresh();
+    } finally {
+      setResolvingId(undefined);
+      setConfirmingServerId(undefined);
+    }
+  };
+
+  const conflictName = (conflict: (typeof conflicts)[number]) => {
+    const payload =
+      conflict.localPayload !== null && typeof conflict.localPayload === "object"
+        ? (conflict.localPayload as Record<string, unknown>)
+        : undefined;
+    const title = payload?.title ?? payload?.name;
+    return typeof title === "string" && title.trim().length > 0
+      ? title
+      : conflict.entityId;
   };
 
   return (
@@ -64,6 +100,11 @@ export function SyncStatusPage() {
           <strong>{details?.pendingCount ?? 0}</strong>
           <small>{t("sync.pendingHint")}</small>
         </article>
+        <article className="panel sync-summary-card">
+          <span>{t("sync.conflicts")}</span>
+          <strong>{details?.conflictCount ?? 0}</strong>
+          <small>{t("sync.conflictHint")}</small>
+        </article>
       </div>
 
       {details?.state.lastError && (
@@ -83,6 +124,76 @@ export function SyncStatusPage() {
           )}
         </div>
       )}
+
+      <section className="panel sync-conflicts" aria-labelledby="sync-conflicts-title">
+        <div>
+          <h2 id="sync-conflicts-title">{t("sync.conflictTitle")}</h2>
+          <p>{t("sync.conflictDescription")}</p>
+        </div>
+        {conflicts.length === 0 ? (
+          <p className="muted">{t("sync.noConflicts")}</p>
+        ) : (
+          <div className="sync-conflict-list">
+            {conflicts.map((conflict) => (
+              <article className="sync-conflict-card" key={conflict.id}>
+                <div>
+                  <span>
+                    {t(`sync.entity.${conflict.entityType}`)}
+                  </span>
+                  <strong>{conflictName(conflict)}</strong>
+                  <small>
+                    {t(`sync.errorCode.${conflict.code}`, {
+                      defaultValue: conflict.code,
+                    })}
+                  </small>
+                </div>
+                <div className="sync-conflict-actions">
+                  {confirmingServerId === conflict.id ? (
+                    <>
+                      <small>{t("sync.useServerConfirm")}</small>
+                      <button
+                        className="button button-danger"
+                        disabled={resolvingId !== undefined}
+                        onClick={() => void resolve(conflict.id, "USE_SERVER")}
+                        type="button"
+                      >
+                        {t("sync.confirmUseServer")}
+                      </button>
+                      <button
+                        className="button button-quiet"
+                        disabled={resolvingId !== undefined}
+                        onClick={() => setConfirmingServerId(undefined)}
+                        type="button"
+                      >
+                        {t("common.cancel")}
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        className="button button-outline"
+                        disabled={resolvingId !== undefined}
+                        onClick={() => void resolve(conflict.id, "KEEP_LOCAL")}
+                        type="button"
+                      >
+                        {t("sync.keepLocal")}
+                      </button>
+                      <button
+                        className="button button-quiet"
+                        disabled={resolvingId !== undefined}
+                        onClick={() => setConfirmingServerId(conflict.id)}
+                        type="button"
+                      >
+                        {t("sync.useServer")}
+                      </button>
+                    </>
+                  )}
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
+      </section>
 
       <section className="panel sync-settings">
         <div>

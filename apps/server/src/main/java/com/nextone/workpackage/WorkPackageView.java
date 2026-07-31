@@ -1,16 +1,18 @@
-package com.nextone.project;
+package com.nextone.workpackage;
 
 import java.time.OffsetDateTime;
 
-public record ProjectView(
+public record WorkPackageView(
         String id,
         String userId,
-        String name,
+        String projectId,
+        String parentId,
+        String title,
         String note,
-        ProjectStatus status,
         String sortKey,
         OffsetDateTime createdAt,
         OffsetDateTime updatedAt,
+        OffsetDateTime deletedAt,
         long revision
 ) {
 }

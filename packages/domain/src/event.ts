@@ -16,8 +16,6 @@ export const taskEventTypes = [
   "REOPENED",
   "WIP_LIMIT_OVERRIDDEN",
   "PROJECT_CHANGED",
-  "PROJECT_FOCUS_SET",
-  "PROJECT_FOCUS_CLEARED",
   "REVIEWED",
 ] as const;
 

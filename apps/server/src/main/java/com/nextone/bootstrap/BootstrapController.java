@@ -12,6 +12,8 @@ import com.nextone.review.ReviewSessionRepository;
 import com.nextone.review.ReviewSessionView;
 import com.nextone.task.TaskRepository;
 import com.nextone.task.TaskView;
+import com.nextone.workpackage.WorkPackageRepository;
+import com.nextone.workpackage.WorkPackageView;
 import java.util.List;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -24,6 +26,7 @@ public class BootstrapController {
     private final CurrentUser currentUser;
     private final TaskRepository tasks;
     private final ProjectRepository projects;
+    private final WorkPackageRepository workPackages;
     private final DailyPlanRepository dailyPlans;
     private final ReviewSessionRepository reviewSessions;
     private final TaskEventRepository events;
@@ -32,6 +35,7 @@ public class BootstrapController {
             CurrentUser currentUser,
             TaskRepository tasks,
             ProjectRepository projects,
+            WorkPackageRepository workPackages,
             DailyPlanRepository dailyPlans,
             ReviewSessionRepository reviewSessions,
             TaskEventRepository events
@@ -39,6 +43,7 @@ public class BootstrapController {
         this.currentUser = currentUser;
         this.tasks = tasks;
         this.projects = projects;
+        this.workPackages = workPackages;
         this.dailyPlans = dailyPlans;
         this.reviewSessions = reviewSessions;
         this.events = events;
@@ -48,10 +53,11 @@ public class BootstrapController {
     BootstrapResponse bootstrap() {
         SingleUserPrincipal user = currentUser.get();
         return new BootstrapResponse(
-                4,
+                5,
                 user,
                 tasks.list(user.id(), true),
                 projects.list(user.id()),
+                workPackages.list(user.id()),
                 dailyPlans.listAll(user.id()),
                 reviewSessions.list(user.id()),
                 events.list(user.id(), 500)
@@ -63,6 +69,7 @@ public class BootstrapController {
             SingleUserPrincipal user,
             List<TaskView> tasks,
             List<ProjectView> projects,
+            List<WorkPackageView> workPackages,
             List<DailyPlanView> dailyPlans,
             List<ReviewSessionView> reviewSessions,
             List<TaskEventView> recentEvents

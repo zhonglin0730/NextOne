@@ -14,7 +14,7 @@ import {
   taskApplicationService,
   tasksChangedEvent,
 } from "../tasks/taskService";
-import { getLocalDate, getTimeZone } from "../today/date";
+import { getDateOnly, getLocalDate, getTimeZone } from "../today/date";
 
 type VisibleBoardColumn = Exclude<BoardColumn, "SOMEDAY"> | "COMPLETED";
 
@@ -28,9 +28,7 @@ export function BoardPage() {
   const [projectNames, setProjectNames] = useState<ReadonlyMap<string, string>>(new Map());
   const [selectedTask, setSelectedTask] = useState<Task | undefined>();
   const [todayTaskIds, setTodayTaskIds] = useState<ReadonlySet<string>>(new Set());
-  const [todayFocusTaskIds, setTodayFocusTaskIds] = useState<ReadonlySet<string>>(new Set());
   const [wipLimit, setWipLimit] = useState(3);
-  const [focusLimit, setFocusLimit] = useState(3);
   const [error, setError] = useState("");
   const [feedback, setFeedback] = useState("");
   const localDate = useMemo(() => getLocalDate(), []);
@@ -46,10 +44,8 @@ export function BoardPage() {
       setTasks(boardTasks);
       setProject(projects.find((candidate) => candidate.id === projectId));
       setProjectNames(new Map(projects.map((candidate) => [candidate.id, candidate.name])));
-      setTodayTaskIds(new Set([...today.focus, ...today.later].map(({ task }) => task.id)));
-      setTodayFocusTaskIds(new Set(today.focus.map(({ task }) => task.id)));
+      setTodayTaskIds(new Set(today.planned.map(({ task }) => task.id)));
       setWipLimit(rules.wipLimit);
-      setFocusLimit(rules.focusLimit);
       setError("");
     } catch {
       setError(t("common.error"));
@@ -92,6 +88,9 @@ export function BoardPage() {
           allowWipOverride: true,
         });
       }
+      if ((column === "WAITING" || column === "SOMEDAY") && todayTaskIds.has(current.id)) {
+        await taskApplicationService.removeFromToday(current.id, localDate);
+      }
 
       notifyTasksChanged();
       const feedbackKey =
@@ -132,15 +131,9 @@ export function BoardPage() {
 
   const addToday = async (task: Task) => {
     try {
-      const section = todayFocusTaskIds.size < focusLimit ? "FOCUS" : "LATER";
-      await taskApplicationService.addToToday(task.id, localDate, getTimeZone(), section);
+      await taskApplicationService.addToToday(task.id, localDate, getTimeZone());
       notifyTasksChanged();
-      setFeedback(
-        t(
-          section === "FOCUS" ? "board.feedback.addedTodayFocus" : "board.feedback.addedTodayLater",
-          { title: task.title },
-        ),
-      );
+      setFeedback(t("board.feedback.addedToday", { title: task.title }));
     } catch {
       setError(t("common.error"));
     }
@@ -280,7 +273,7 @@ export function BoardPage() {
                             task.status === "WAITING"
                               ? "task.followUpSummary"
                               : "task.reviewSummary",
-                            { date: task.reviewAt },
+                            { date: getDateOnly(task.reviewAt) },
                           )}
                         </time>
                       )}
@@ -318,19 +311,27 @@ export function BoardPage() {
                             {t("board.reopen")}
                           </button>
                         )}
-                        {task.status === "READY" && task.visibility !== "SOMEDAY" ? (
+                        {column === "WAITING" ? (
+                          <button
+                            className="board-card-follow-up-action"
+                            onClick={() => setSelectedTask(task)}
+                            type="button"
+                          >
+                            {task.waitingFor === undefined || task.reviewAt === undefined
+                              ? t("task.setFollowUp")
+                              : t("task.editFollowUp")}
+                          </button>
+                        ) : null}
+                        {(task.status === "READY" || task.status === "DOING") &&
+                        task.visibility !== "SOMEDAY" ? (
                           <button
                             disabled={todayTaskIds.has(task.id)}
                             onClick={() => void addToday(task)}
                             type="button"
                           >
-                            {todayFocusTaskIds.has(task.id)
-                              ? t("board.addedTodayFocus")
-                              : todayTaskIds.has(task.id)
-                                ? t("board.addedToday")
-                                : todayFocusTaskIds.size < focusLimit
-                                  ? t("board.addToday")
-                                  : t("board.addTodayLater")}
+                            {todayTaskIds.has(task.id)
+                              ? t("board.addedToday")
+                              : t("board.addToday")}
                           </button>
                         ) : null}
                         {column === "DOING" ? (

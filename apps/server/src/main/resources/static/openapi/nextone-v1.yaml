@@ -223,30 +223,6 @@ paths:
       responses:
         "200":
           description: Updated project
-  /api/v1/projects/{projectId}/focus:
-    parameters:
-      - name: projectId
-        in: path
-        required: true
-        schema:
-          type: string
-    post:
-      operationId: setProjectFocus
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                taskId:
-                  type: string
-                  description: Omit or set to null to clear the project focus.
-      responses:
-        "200":
-          description: Updated project focus
-        "409":
-          $ref: "#/components/responses/ApiError"
   /api/v1/daily-plans/{date}:
     parameters:
       - name: date
@@ -585,7 +561,7 @@ components:
           type: string
         entityType:
           type: string
-          enum: [TASK, PROJECT, DAILY_PLAN, DAILY_PLAN_ITEM]
+          enum: [TASK, PROJECT, WORK_PACKAGE, DAILY_PLAN, DAILY_PLAN_ITEM]
         entityId:
           type: string
         operation:

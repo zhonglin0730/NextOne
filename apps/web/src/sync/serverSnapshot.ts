@@ -6,8 +6,10 @@ import type {
   TaskEvent,
   TaskEventMetadata,
   TaskEventType,
+  WorkPackage,
 } from "@nextone/domain";
 import type { LocalDataSnapshot } from "@nextone/storage-contracts";
+import type { SyncSummary } from "@nextone/sync-core";
 
 interface ServerDailyPlanItem {
   itemId: string;
@@ -45,6 +47,10 @@ type ServerProject = {
   [Key in keyof Project]: Project[Key] | null;
 };
 
+type ServerWorkPackage = {
+  [Key in keyof WorkPackage]: WorkPackage[Key] | null;
+};
+
 export interface ServerBootstrapSnapshot {
   schemaVersion: number;
   user: {
@@ -52,8 +58,18 @@ export interface ServerBootstrapSnapshot {
   };
   tasks: readonly ServerTask[];
   projects: readonly ServerProject[];
+  workPackages: readonly ServerWorkPackage[];
   dailyPlans: readonly ServerDailyPlan[];
   recentEvents: readonly ServerTaskEvent[];
+}
+
+export function canReplaceWithServerSnapshot(summary: SyncSummary): boolean {
+  return (
+    summary.state.status === "UP_TO_DATE" &&
+    summary.pendingCount === 0 &&
+    summary.blockedCount === 0 &&
+    summary.conflictCount === 0
+  );
 }
 
 function withoutNulls<T extends object>(value: T): T {
@@ -94,11 +110,14 @@ export function toLocalSnapshot(
   }));
 
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     exportedAt,
     tasks: bootstrap.tasks.map((task) => withoutNulls(task) as Task),
     areas: [],
     projects: bootstrap.projects.map((project) => withoutNulls(project) as Project),
+    workPackages: bootstrap.workPackages.map(
+      (workPackage) => withoutNulls(workPackage) as WorkPackage,
+    ),
     taskEvents,
     dailyPlans,
     dailyPlanItems,

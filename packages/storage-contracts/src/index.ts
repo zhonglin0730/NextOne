@@ -7,6 +7,7 @@ import type {
   Task,
   TaskEvent,
   TaskStatus,
+  WorkPackage,
 } from "@nextone/domain";
 
 export interface TaskQuery {
@@ -39,6 +40,17 @@ export interface ProjectRepository {
   save(project: Project): Promise<void>;
 }
 
+export interface WorkPackageQuery {
+  projectId?: string;
+  parentId?: string | null;
+}
+
+export interface WorkPackageRepository {
+  findById(id: string): Promise<WorkPackage | undefined>;
+  list(query?: WorkPackageQuery): Promise<readonly WorkPackage[]>;
+  save(workPackage: WorkPackage): Promise<void>;
+}
+
 export interface TaskEventRepository {
   listByTaskId(taskId: string): Promise<readonly TaskEvent[]>;
   listAll(): Promise<readonly TaskEvent[]>;
@@ -57,7 +69,13 @@ export interface DailyPlanItemRepository {
   remove(id: string): Promise<void>;
 }
 
-export type OutboxEntityType = "TASK" | "AREA" | "PROJECT" | "DAILY_PLAN" | "DAILY_PLAN_ITEM";
+export type OutboxEntityType =
+  | "TASK"
+  | "AREA"
+  | "PROJECT"
+  | "WORK_PACKAGE"
+  | "DAILY_PLAN"
+  | "DAILY_PLAN_ITEM";
 export type OutboxOperation = "UPSERT" | "DELETE";
 
 export interface OutboxMutation {
@@ -138,11 +156,12 @@ export interface UserPreferencesRepository {
 }
 
 export interface LocalDataSnapshot {
-  schemaVersion: 1;
+  schemaVersion: 2;
   exportedAt: string;
   tasks: readonly Task[];
   areas: readonly Area[];
   projects: readonly Project[];
+  workPackages: readonly WorkPackage[];
   taskEvents: readonly TaskEvent[];
   dailyPlans: readonly DailyPlan[];
   dailyPlanItems: readonly DailyPlanItem[];
@@ -173,6 +192,7 @@ export interface StorageTransaction {
   tasks: TaskRepository;
   areas: AreaRepository;
   projects: ProjectRepository;
+  workPackages: WorkPackageRepository;
   taskEvents: TaskEventRepository;
   dailyPlans: DailyPlanRepository;
   dailyPlanItems: DailyPlanItemRepository;

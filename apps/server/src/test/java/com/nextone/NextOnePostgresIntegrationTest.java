@@ -258,7 +258,7 @@ class NextOnePostgresIntegrationTest {
 
     @Test
     @Order(5)
-    void revalidatesWipDailyFocusAndProjectFocusRules() throws Exception {
+    void revalidatesWipAndDailyPlanLimits() throws Exception {
         List<String> taskIds = new ArrayList<>();
         for (int index = 0; index < 4; index++) {
             String taskId = createTask("WIP " + index, null);
@@ -298,22 +298,6 @@ class NextOnePostgresIntegrationTest {
         assertThat(jsonMapper.readTree(dailyFocusExceeded.body()).get("code").asString())
                 .isEqualTo("DAILY_FOCUS_LIMIT_EXCEEDED");
 
-        String projectA = createProject("Project A");
-        String projectB = createProject("Project B");
-        String projectBTask = createTask("Belongs to B", projectB);
-        assertThat(transition(projectBTask, "READY", false).statusCode()).isEqualTo(200);
-
-        HttpResponse<String> invalidFocus = send(
-                "POST",
-                "/api/v1/projects/" + projectA + "/focus",
-                """
-                        {"taskId":"%s"}
-                        """.formatted(projectBTask),
-                "test-access-token"
-        );
-        assertThat(invalidFocus.statusCode()).isEqualTo(409);
-        assertThat(jsonMapper.readTree(invalidFocus.body()).get("code").asString())
-                .isEqualTo("PROJECT_FOCUS_TASK_INVALID");
     }
 
     @Test

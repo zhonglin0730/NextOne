@@ -12,7 +12,7 @@ import {
 } from "../tasks/taskService";
 import { transitionWithWipConfirmation } from "../tasks/taskActions";
 import { getWeekStartsAt } from "../today/date";
-import { ProjectProgress } from "./ProjectProgress";
+import { ProjectPortfolioOverview } from "./ProjectPortfolioOverview";
 
 export function ProjectsPage() {
   const { i18n, t } = useTranslation();
@@ -89,7 +89,7 @@ export function ProjectsPage() {
     }
   };
 
-  const startFocusTask = async (task: Task) => {
+  const startTask = async (task: Task) => {
     setStartingTaskId(task.id);
     setError("");
     try {
@@ -106,17 +106,21 @@ export function ProjectsPage() {
   const formatter = new Intl.DateTimeFormat(i18n.resolvedLanguage ?? "zh-CN", {
     dateStyle: "medium",
   });
-  const primaryProject =
-    projects.find(({ focusTask }) => focusTask?.status === "DOING") ??
-    projects.find(({ focusTask }) => focusTask !== undefined) ??
-    projects[0];
-  const attentionProjects = projects.filter(
-    ({ needsFocusDecision, project }) =>
-      needsFocusDecision && project.id !== primaryProject?.project.id,
-  );
-  const portfolioProjects = projects.filter(
-    ({ project }) => project.id !== primaryProject?.project.id,
-  );
+  const doingProjects = projects.filter(({ doingTasks }) => doingTasks.length > 0);
+  const readyProjects =
+    doingProjects.length === 0
+      ? projects.filter(({ nextReadyTask }) => nextReadyTask !== undefined)
+      : [];
+  const overviewProjects =
+    doingProjects.length > 1 ? doingProjects : readyProjects.length > 1 ? readyProjects : [];
+  const overviewMode = doingProjects.length > 1 ? "doing" : "ready";
+  const suggestedProject =
+    doingProjects.length === 0 && readyProjects.length <= 1
+      ? (readyProjects[0] ?? (projects.length === 1 ? projects[0] : undefined))
+      : undefined;
+  const singleDoingProject = doingProjects.length === 1 ? doingProjects[0] : undefined;
+  const spotlightProject = singleDoingProject ?? suggestedProject;
+  const attentionProjects = projects.filter(({ needsFocusDecision }) => needsFocusDecision);
   const needsDecisionCount = attentionProjects.length;
 
   return (
@@ -127,9 +131,14 @@ export function ProjectsPage() {
           <h1 id="projects-title">{t("project.dashboardTitle")}</h1>
           <p>{t("project.dashboardDescription")}</p>
         </div>
-        <button className="button button-primary" onClick={openCreate} type="button">
-          ＋ {t("project.create")}
-        </button>
+        <div className="page-header-actions">
+          <Link className="button button-outline" to="/board">
+            {t("project.allTasks")}
+          </Link>
+          <button className="button button-primary" onClick={openCreate} type="button">
+            ＋ {t("project.create")}
+          </button>
+        </div>
       </header>
 
       {error.length > 0 ? <p className="page-error">{error}</p> : null}
@@ -149,59 +158,138 @@ export function ProjectsPage() {
         </div>
       ) : (
         <>
-          {primaryProject === undefined ? null : (
+          {overviewProjects.length > 1 ? (
+            <section className="project-active-section" aria-labelledby="project-active-title">
+              <header>
+                <div>
+                  <p className="eyebrow">
+                    {t(
+                      overviewMode === "doing"
+                        ? "project.activeProjectsEyebrow"
+                        : "project.readyProjectsEyebrow",
+                    )}
+                  </p>
+                  <h2 id="project-active-title">
+                    {t(
+                      overviewMode === "doing"
+                        ? "project.activeProjectsTitle"
+                        : "project.readyProjectsTitle",
+                      { count: overviewProjects.length },
+                    )}
+                  </h2>
+                </div>
+                <p>
+                  {t(
+                    overviewMode === "doing"
+                      ? "project.activeProjectsDescription"
+                      : "project.readyProjectsDescription",
+                  )}
+                </p>
+              </header>
+              <div className="project-active-grid">
+                {overviewProjects.map((overview) => (
+                  <Link
+                    className="project-active-card"
+                    key={overview.project.id}
+                    to={`/projects/${overview.project.id}`}
+                  >
+                    <header>
+                      <strong>{overview.project.name}</strong>
+                      <span>{overview.progress.completedPercent}%</span>
+                    </header>
+                    <ul>
+                      {(overview.doingTasks.length > 0
+                        ? overview.doingTasks
+                        : overview.nextReadyTask === undefined
+                          ? []
+                          : [overview.nextReadyTask]
+                      ).map((task) => (
+                        <li key={task.id}>{task.title}</li>
+                      ))}
+                    </ul>
+                    <footer>
+                      <span>
+                        {overview.waitingCount > 0
+                          ? t("project.waitingSummary", { count: overview.waitingCount })
+                          : t("project.noWaiting")}
+                      </span>
+                      <strong>{t("project.continueProject")} →</strong>
+                    </footer>
+                  </Link>
+                ))}
+              </div>
+            </section>
+          ) : spotlightProject === undefined ? null : (
             <section
               className="project-cockpit-hero"
               aria-labelledby="project-cockpit-primary-title"
             >
               <div className="project-cockpit-project">
-                <p className="eyebrow">{t("project.primaryProject")}</p>
+                <p className="eyebrow">
+                  {singleDoingProject === undefined
+                    ? t("project.suggestedProject")
+                    : t("project.activeProject")}
+                </p>
                 <h2 id="project-cockpit-primary-title">
-                  <Link to={`/projects/${primaryProject.project.id}`}>
-                    {primaryProject.project.name}
+                  <Link to={`/projects/${spotlightProject.project.id}`}>
+                    {spotlightProject.project.name}
                   </Link>
                 </h2>
-                <p>{primaryProject.project.note ?? t("project.outcomeEmpty")}</p>
+                <p>{spotlightProject.project.note ?? t("project.outcomeEmpty")}</p>
                 <span className="project-last-progress">
-                  {primaryProject.lastProgressAt === undefined
+                  {spotlightProject.lastProgressAt === undefined
                     ? t("project.noProgress")
                     : t("project.lastProgress", {
-                        date: formatter.format(new Date(primaryProject.lastProgressAt)),
+                        date: formatter.format(new Date(spotlightProject.lastProgressAt)),
                       })}
                 </span>
               </div>
 
               <div className="project-cockpit-next">
-                <span>{t("project.currentNext")}</span>
-                <strong>{primaryProject.focusTask?.title ?? t("project.noFocus")}</strong>
+                <span>
+                  {spotlightProject.doingTasks.length > 0
+                    ? t("project.doingSummary", { count: spotlightProject.doingTasks.length })
+                    : t("project.nextReadyTitle")}
+                </span>
+                {spotlightProject.doingTasks.length > 0 ? (
+                  <ul className="project-cockpit-task-list">
+                    {spotlightProject.doingTasks.map((task) => (
+                      <li key={task.id}>{task.title}</li>
+                    ))}
+                  </ul>
+                ) : (
+                  <strong>{spotlightProject.nextReadyTask?.title ?? t("project.noFocus")}</strong>
+                )}
                 <p>
-                  {primaryProject.focusTask === undefined
-                    ? t("project.noFocusGuidance")
-                    : t("project.focusGuidance")}
+                  {spotlightProject.doingTasks.length > 0
+                    ? t("project.doingSummaryDescription")
+                    : spotlightProject.nextReadyTask === undefined
+                      ? t("project.noFocusGuidance")
+                      : t("project.nextReadyDescription")}
                 </p>
                 <div className="project-cockpit-actions">
-                  {primaryProject.focusTask === undefined ? (
+                  {spotlightProject.doingTasks.length > 0 ? (
                     <Link
                       className="button button-primary"
-                      to={`/projects/${primaryProject.project.id}#project-focus`}
-                    >
-                      {t("project.decideNext")}
-                    </Link>
-                  ) : primaryProject.focusTask.status === "DOING" ? (
-                    <Link
-                      className="button button-primary"
-                      to={`/projects/${primaryProject.project.id}#project-focus`}
+                      to={`/projects/${spotlightProject.project.id}`}
                     >
                       {t("project.continueProject")}
+                    </Link>
+                  ) : spotlightProject.nextReadyTask === undefined ? (
+                    <Link
+                      className="button button-primary"
+                      to={`/projects/${spotlightProject.project.id}`}
+                    >
+                      {t("project.decideNext")}
                     </Link>
                   ) : (
                     <button
                       className="button button-primary"
-                      disabled={startingTaskId === primaryProject.focusTask.id}
-                      onClick={() => void startFocusTask(primaryProject.focusTask!)}
+                      disabled={startingTaskId === spotlightProject.nextReadyTask.id}
+                      onClick={() => void startTask(spotlightProject.nextReadyTask!)}
                       type="button"
                     >
-                      {startingTaskId === primaryProject.focusTask.id
+                      {startingTaskId === spotlightProject.nextReadyTask.id
                         ? t("common.saving")
                         : t("project.startNext")}
                     </button>
@@ -227,7 +315,7 @@ export function ProjectsPage() {
               </header>
               <div className="project-attention-list">
                 {attentionProjects.map(({ project }) => (
-                  <Link key={project.id} to={`/projects/${project.id}#project-focus`}>
+                  <Link key={project.id} to={`/projects/${project.id}`}>
                     <span>{project.name}</span>
                     <strong>{t("project.decideNext")} →</strong>
                   </Link>
@@ -236,85 +324,7 @@ export function ProjectsPage() {
             </section>
           ) : null}
 
-          <div className="project-section-heading">
-            <div>
-              <p className="eyebrow">{t("project.portfolioEyebrow")}</p>
-              <h2>{t("project.otherActiveProjects")}</h2>
-            </div>
-            <span className="count-pill">{portfolioProjects.length}</span>
-          </div>
-
-          <div className="project-grid">
-            {portfolioProjects.map((overview) => (
-              <article
-                className={`project-card ${
-                  overview.needsFocusDecision ? "project-card-needs-focus" : ""
-                }`}
-                key={overview.project.id}
-              >
-                <header>
-                  <div>
-                    <span className="project-icon" aria-hidden="true">
-                      ◇
-                    </span>
-                    <div>
-                      <h2>
-                        <Link to={`/projects/${overview.project.id}`}>{overview.project.name}</Link>
-                      </h2>
-                      {overview.project.note === undefined ? null : <p>{overview.project.note}</p>}
-                    </div>
-                  </div>
-                  <span
-                    className={`project-health ${
-                      overview.needsFocusDecision
-                        ? "project-health-decision"
-                        : "project-health-active"
-                    }`}
-                  >
-                    {overview.needsFocusDecision ? t("project.needsDecision") : t("project.active")}
-                  </span>
-                </header>
-
-                <div className="project-focus-card">
-                  <span>{t("project.currentNext")}</span>
-                  <strong>{overview.focusTask?.title ?? t("project.noFocus")}</strong>
-                </div>
-
-                <ProjectProgress compact progress={overview.progress} />
-
-                <dl className="project-metrics">
-                  <div>
-                    <dt>{t("project.completedThisWeek")}</dt>
-                    <dd>{overview.completedThisWeek}</dd>
-                  </div>
-                  <div>
-                    <dt>{t("project.waitingCount")}</dt>
-                    <dd>{overview.waitingCount}</dd>
-                  </div>
-                  <div>
-                    <dt>{t("project.candidateCount")}</dt>
-                    <dd>{overview.nextCandidateCount}</dd>
-                  </div>
-                </dl>
-
-                <footer>
-                  <span>
-                    {overview.lastProgressAt === undefined
-                      ? t("project.noProgress")
-                      : t("project.lastProgress", {
-                          date: formatter.format(new Date(overview.lastProgressAt)),
-                        })}
-                  </span>
-                  <Link to={`/projects/${overview.project.id}`}>{t("project.openProject")} →</Link>
-                </footer>
-              </article>
-            ))}
-            <button className="project-create-card" onClick={openCreate} type="button">
-              <span aria-hidden="true">＋</span>
-              <strong>{t("project.create")}</strong>
-              <small>{t("project.createHint")}</small>
-            </button>
-          </div>
+          <ProjectPortfolioOverview projects={projects} />
         </>
       )}
 

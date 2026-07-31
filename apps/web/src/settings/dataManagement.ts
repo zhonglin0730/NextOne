@@ -30,13 +30,18 @@ function validatePreferences(value: unknown): UserPreferences | undefined {
 }
 
 export function parseSnapshot(value: unknown): LocalDataSnapshot {
-  if (!isRecord(value) || value.schemaVersion !== 1 || typeof value.exportedAt !== "string") {
+  if (
+    !isRecord(value) ||
+    (value.schemaVersion !== 1 && value.schemaVersion !== 2) ||
+    typeof value.exportedAt !== "string"
+  ) {
     throw new Error("IMPORT_SCHEMA_UNSUPPORTED");
   }
   const arrayFields = [
     "tasks",
     "areas",
     "projects",
+    ...(value.schemaVersion === 2 ? (["workPackages"] as const) : []),
     "taskEvents",
     "dailyPlans",
     "dailyPlanItems",
@@ -54,12 +59,43 @@ export function parseSnapshot(value: unknown): LocalDataSnapshot {
     }
   }
   const preferences = validatePreferences(value.preferences);
+  const legacyTasks = value.tasks as readonly Record<string, unknown>[];
+  const workPackages =
+    value.schemaVersion === 2
+      ? (value.workPackages as LocalDataSnapshot["workPackages"])
+      : (legacyTasks
+          .filter((task) => task.kind === "WORK_PACKAGE" && typeof task.projectId === "string")
+          .map((task) => ({
+            id: task.id,
+            userId: task.userId,
+            projectId: task.projectId,
+            title: task.title,
+            sortKey: task.sortKey,
+            createdAt: task.createdAt,
+            updatedAt: task.updatedAt,
+            revision: task.revision,
+            ...(typeof task.parentTaskId === "string" ? { parentId: task.parentTaskId } : {}),
+            ...(typeof task.note === "string" ? { note: task.note } : {}),
+          })) as LocalDataSnapshot["workPackages"]);
+  const tasks =
+    value.schemaVersion === 2
+      ? (value.tasks as LocalDataSnapshot["tasks"])
+      : (legacyTasks
+          .filter((task) => task.kind !== "WORK_PACKAGE")
+          .map(({ kind: _kind, parentTaskId, ...task }) => ({
+            ...task,
+            ...(typeof parentTaskId === "string" ? { workPackageId: parentTaskId } : {}),
+          })) as unknown as LocalDataSnapshot["tasks"]);
+  const projects = (value.projects as readonly Record<string, unknown>[]).map(
+    ({ focusTaskId: _focusTaskId, ...project }) => project,
+  ) as unknown as LocalDataSnapshot["projects"];
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     exportedAt: value.exportedAt,
-    tasks: value.tasks as LocalDataSnapshot["tasks"],
+    tasks,
     areas: value.areas as LocalDataSnapshot["areas"],
-    projects: value.projects as LocalDataSnapshot["projects"],
+    projects,
+    workPackages,
     taskEvents: value.taskEvents as LocalDataSnapshot["taskEvents"],
     dailyPlans: value.dailyPlans as LocalDataSnapshot["dailyPlans"],
     dailyPlanItems: value.dailyPlanItems as LocalDataSnapshot["dailyPlanItems"],

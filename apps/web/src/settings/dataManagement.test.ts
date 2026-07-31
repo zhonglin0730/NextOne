@@ -17,13 +17,22 @@ function validSnapshot() {
 
 describe("data import validation", () => {
   it("accepts a complete NextOne V1 snapshot", () => {
-    expect(parseSnapshot(validSnapshot())).toEqual(validSnapshot());
+    expect(parseSnapshot(validSnapshot())).toEqual({
+      ...validSnapshot(),
+      schemaVersion: 2,
+      workPackages: [],
+    });
   });
 
   it("rejects unsupported schema versions before import", () => {
-    expect(() => parseSnapshot({ ...validSnapshot(), schemaVersion: 2 })).toThrow(
+    expect(() => parseSnapshot({ ...validSnapshot(), schemaVersion: 3 })).toThrow(
       "IMPORT_SCHEMA_UNSUPPORTED",
     );
+  });
+
+  it("accepts the current NextOne V2 snapshot", () => {
+    const current = { ...validSnapshot(), schemaVersion: 2, workPackages: [] };
+    expect(parseSnapshot(current)).toEqual(current);
   });
 
   it("rejects a snapshot with a missing collection", () => {

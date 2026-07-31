@@ -310,6 +310,7 @@ export function CaptureDialog({
                   type="number"
                   value={estimateMinutes}
                 />
+                <small>{t("capture.estimateHint")}</small>
               </label>
               <label className="form-field">
                 <span>{t("capture.energy")}</span>
@@ -325,6 +326,7 @@ export function CaptureDialog({
                   <option value="MEDIUM">{t("capture.energyMedium")}</option>
                   <option value="HIGH">{t("capture.energyHigh")}</option>
                 </select>
+                <small>{t("capture.energyHint")}</small>
               </label>
             </div>
           </details>

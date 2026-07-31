@@ -1,7 +1,15 @@
 import { randomUUID } from "expo-crypto";
 import { openDatabaseAsync, type SQLiteDatabase } from "expo-sqlite";
 
-import type { Area, DailyPlan, DailyPlanItem, Project, Task, TaskEvent } from "@nextone/domain";
+import type {
+  Area,
+  DailyPlan,
+  DailyPlanItem,
+  Project,
+  Task,
+  TaskEvent,
+  WorkPackage,
+} from "@nextone/domain";
 import type {
   AreaRepository,
   DataManagementRepository,
@@ -25,6 +33,8 @@ import type {
   TaskRepository,
   UserPreferences,
   UserPreferencesRepository,
+  WorkPackageQuery,
+  WorkPackageRepository,
 } from "@nextone/storage-contracts";
 
 type SqlExecutor = Pick<SQLiteDatabase, "execAsync" | "getAllAsync" | "getFirstAsync" | "runAsync">;
@@ -33,6 +43,7 @@ type RecordKind =
   | "TASK"
   | "AREA"
   | "PROJECT"
+  | "WORK_PACKAGE"
   | "TASK_EVENT"
   | "DAILY_PLAN"
   | "DAILY_PLAN_ITEM"
@@ -61,6 +72,7 @@ const allKinds: readonly RecordKind[] = [
   "TASK",
   "AREA",
   "PROJECT",
+  "WORK_PACKAGE",
   "TASK_EVENT",
   "DAILY_PLAN",
   "DAILY_PLAN_ITEM",
@@ -205,6 +217,32 @@ function projectRepository(executor: SqlExecutor): ProjectRepository {
         userId: project.userId,
         status: project.status,
         sortKey: project.sortKey,
+      }),
+  };
+}
+
+function workPackageRepository(executor: SqlExecutor): WorkPackageRepository {
+  return {
+    findById: (id) => findRecord<WorkPackage>(executor, "WORK_PACKAGE", id),
+    async list(query?: WorkPackageQuery) {
+      const workPackages = await listRecords<WorkPackage>(executor, "WORK_PACKAGE");
+      return workPackages
+        .filter(
+          (workPackage) =>
+            workPackage.deletedAt === undefined &&
+            (query?.projectId === undefined || workPackage.projectId === query.projectId) &&
+            (query?.parentId === undefined ||
+              (query.parentId === null
+                ? workPackage.parentId === undefined
+                : workPackage.parentId === query.parentId)),
+        )
+        .sort((left, right) => left.sortKey.localeCompare(right.sortKey));
+    },
+    save: (workPackage) =>
+      saveRecord(executor, "WORK_PACKAGE", workPackage.id, workPackage, {
+        userId: workPackage.userId,
+        projectId: workPackage.projectId,
+        sortKey: workPackage.sortKey,
       }),
   };
 }
@@ -357,22 +395,33 @@ function restorePointRepository(executor: SqlExecutor): RestorePointRepository {
 
 function dataManagementRepository(executor: SqlExecutor): DataManagementRepository {
   const exportSnapshot = async (exportedAt: string): Promise<LocalDataSnapshot> => {
-    const [tasks, areas, projects, taskEvents, dailyPlans, dailyPlanItems, preferences] =
+    const [
+      tasks,
+      areas,
+      projects,
+      workPackages,
+      taskEvents,
+      dailyPlans,
+      dailyPlanItems,
+      preferences,
+    ] =
       await Promise.all([
         listRecords<Task>(executor, "TASK"),
         listRecords<Area>(executor, "AREA"),
         listRecords<Project>(executor, "PROJECT"),
+        listRecords<WorkPackage>(executor, "WORK_PACKAGE"),
         listRecords<TaskEvent>(executor, "TASK_EVENT"),
         listRecords<DailyPlan>(executor, "DAILY_PLAN"),
         listRecords<DailyPlanItem>(executor, "DAILY_PLAN_ITEM"),
         findRecord<UserPreferences>(executor, "PREFERENCES", "default"),
       ]);
     return {
-      schemaVersion: 1,
+      schemaVersion: 2,
       exportedAt,
       tasks,
       areas,
       projects,
+      workPackages,
       taskEvents,
       dailyPlans,
       dailyPlanItems,
@@ -387,6 +436,9 @@ function dataManagementRepository(executor: SqlExecutor): DataManagementReposito
       const transaction = createStorageTransaction(executor);
       for (const area of snapshot.areas) await transaction.areas.save(area);
       for (const project of snapshot.projects) await transaction.projects.save(project);
+      for (const workPackage of snapshot.workPackages) {
+        await transaction.workPackages.save(workPackage);
+      }
       for (const task of snapshot.tasks) await transaction.tasks.save(task);
       for (const event of snapshot.taskEvents) await transaction.taskEvents.append(event);
       for (const plan of snapshot.dailyPlans) await transaction.dailyPlans.save(plan);
@@ -403,6 +455,11 @@ function dataManagementRepository(executor: SqlExecutor): DataManagementReposito
         })),
         ...snapshot.tasks.map((entity) => ({
           entityType: "TASK" as const,
+          entity,
+          deleted: entity.deletedAt !== undefined,
+        })),
+        ...snapshot.workPackages.map((entity) => ({
+          entityType: "WORK_PACKAGE" as const,
           entity,
           deleted: entity.deletedAt !== undefined,
         })),
@@ -440,6 +497,7 @@ function createStorageTransaction(executor: SqlExecutor): StorageTransaction {
     tasks: taskRepository(executor),
     areas: areaRepository(executor),
     projects: projectRepository(executor),
+    workPackages: workPackageRepository(executor),
     taskEvents: taskEventRepository(executor),
     dailyPlans: dailyPlanRepository(executor),
     dailyPlanItems: dailyPlanItemRepository(executor),
@@ -489,6 +547,42 @@ export class ExpoSqliteLocalDatabase implements LocalDatabase {
         ON nextone_records(user_id, local_date)
         WHERE kind = 'DAILY_PLAN';
     `);
+    const legacyTasks = await listRecords<
+      Task & { kind?: "ACTION" | "WORK_PACKAGE"; parentTaskId?: string }
+    >(database, "TASK");
+    for (const legacy of legacyTasks) {
+      if (legacy.kind === "WORK_PACKAGE" && legacy.projectId !== undefined) {
+        await saveRecord(database, "WORK_PACKAGE", legacy.id, {
+          id: legacy.id,
+          userId: legacy.userId,
+          projectId: legacy.projectId,
+          title: legacy.title,
+          sortKey: legacy.sortKey,
+          createdAt: legacy.createdAt,
+          updatedAt: legacy.updatedAt,
+          revision: legacy.revision,
+          ...(legacy.parentTaskId === undefined ? {} : { parentId: legacy.parentTaskId }),
+          ...(legacy.note === undefined ? {} : { note: legacy.note }),
+        } satisfies WorkPackage);
+        await removeRecord(database, "TASK", legacy.id);
+      } else if (legacy.kind !== undefined || legacy.parentTaskId !== undefined) {
+        const { kind: _kind, parentTaskId, ...task } = legacy;
+        await taskRepository(database).save({
+          ...task,
+          ...(parentTaskId === undefined ? {} : { workPackageId: parentTaskId }),
+        });
+      }
+    }
+    const legacyProjects = await listRecords<Project & { focusTaskId?: string }>(
+      database,
+      "PROJECT",
+    );
+    for (const legacy of legacyProjects) {
+      if (legacy.focusTaskId !== undefined) {
+        const { focusTaskId: _focusTaskId, ...project } = legacy;
+        await projectRepository(database).save(project);
+      }
+    }
     return database;
   }
 

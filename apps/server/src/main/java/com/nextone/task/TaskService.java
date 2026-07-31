@@ -38,7 +38,6 @@ public class TaskService {
                 userId,
                 command.projectId(),
                 null,
-                TaskKind.ACTION,
                 title,
                 trimToNull(command.note()),
                 TaskStatus.INBOX,
@@ -113,10 +112,6 @@ public class TaskService {
             boolean allowWipOverride
     ) {
         TaskView current = get(userId, taskId);
-        if (current.kind() == TaskKind.WORK_PACKAGE
-                && !(current.status() == TaskStatus.INBOX && target == TaskStatus.READY)) {
-            throw new ApiException(HttpStatus.CONFLICT, "TASK_WORK_PACKAGE_TRANSITION_INVALID");
-        }
         if (!current.status().canTransitionTo(target)) {
             throw new ApiException(HttpStatus.CONFLICT, "TASK_TRANSITION_INVALID", Map.of(
                     "from", current.status().name(),
@@ -148,7 +143,9 @@ public class TaskService {
                 target,
                 current.visibility(),
                 current.deadlineAt(),
-                current.reviewAt(),
+                current.status() == TaskStatus.WAITING && target != TaskStatus.WAITING
+                        ? null
+                        : current.reviewAt(),
                 current.reviewedAt(),
                 target == TaskStatus.WAITING ? current.waitingFor() : null,
                 target == TaskStatus.WAITING ? now : null,
@@ -169,11 +166,6 @@ public class TaskService {
             events.append(userId, taskId, "WIP_LIMIT_OVERRIDDEN", Map.of(
                     "limit", DOING_LIMIT
             ), now);
-        }
-        if (target.terminal()) {
-            if (repository.clearProjectFocusForTask(userId, taskId, now)) {
-                events.append(userId, taskId, "PROJECT_FOCUS_CLEARED", Map.of(), now);
-            }
         }
         return updated;
     }
@@ -323,8 +315,7 @@ public class TaskService {
                 source.id(),
                 source.userId(),
                 projectId,
-                source.parentTaskId(),
-                source.kind(),
+                source.workPackageId(),
                 title,
                 note,
                 status,

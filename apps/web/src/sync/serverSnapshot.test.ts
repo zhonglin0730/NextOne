@@ -1,8 +1,31 @@
 import { describe, expect, it } from "vitest";
 
-import { toLocalSnapshot, type ServerBootstrapSnapshot } from "./serverSnapshot";
+import {
+  canReplaceWithServerSnapshot,
+  toLocalSnapshot,
+  type ServerBootstrapSnapshot,
+} from "./serverSnapshot";
 
 describe("server snapshot", () => {
+  it("only replaces local data when no pending or blocked local work exists", () => {
+    const baseSummary = {
+      state: {
+        id: "default" as const,
+        cursor: 2,
+        status: "UP_TO_DATE" as const,
+        retryCount: 0,
+      },
+      pendingCount: 0,
+      blockedCount: 0,
+      conflictCount: 0,
+    };
+
+    expect(canReplaceWithServerSnapshot(baseSummary)).toBe(true);
+    expect(canReplaceWithServerSnapshot({ ...baseSummary, blockedCount: 1 })).toBe(false);
+    expect(canReplaceWithServerSnapshot({ ...baseSummary, conflictCount: 1 })).toBe(false);
+    expect(canReplaceWithServerSnapshot({ ...baseSummary, pendingCount: 1 })).toBe(false);
+  });
+
   it("converts bootstrap data into the local cache shape and removes nullable fields", () => {
     const task: ServerBootstrapSnapshot["tasks"][number] = {
       id: "task-1",
@@ -40,7 +63,6 @@ describe("server snapshot", () => {
           name: "Release",
           note: null,
           status: "ACTIVE",
-          focusTaskId: "task-1",
           sortKey: "1",
           createdAt: "2026-07-28T01:00:00Z",
           updatedAt: "2026-07-28T01:00:00Z",
@@ -48,6 +70,7 @@ describe("server snapshot", () => {
           revision: 1,
         },
       ],
+      workPackages: [],
       dailyPlans: [
         {
           id: "plan-1",

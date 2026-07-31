@@ -1,5 +1,6 @@
 import {
   createInboxTask,
+  createWorkPackage,
   eventTypeForStatusTransition,
   InvalidTaskTransitionError,
   transitionTask,
@@ -11,9 +12,9 @@ import {
   type ProjectStatus,
   type Task,
   type TaskEvent,
-  type TaskKind,
   type TaskStatus,
   type TaskVisibility,
+  type WorkPackage,
 } from "@nextone/domain";
 import type { LocalDatabase, OutboxMutation, StorageTransaction } from "@nextone/storage-contracts";
 
@@ -22,8 +23,7 @@ export interface CaptureTaskInput {
   note?: string;
   areaId?: string;
   projectId?: string;
-  parentTaskId?: string;
-  kind?: TaskKind;
+  workPackageId?: string;
   deadlineAt?: string;
   reviewAt?: string;
   estimateMinutes?: number;
@@ -34,7 +34,7 @@ export interface UpdateTaskDetailsInput {
   title: string;
   note: string | null;
   projectId: string | null;
-  parentTaskId: string | null;
+  workPackageId: string | null;
   deadlineAt: string | null;
   reviewAt: string | null;
   estimateMinutes: number | null;
@@ -71,6 +71,7 @@ export interface TodayTask {
 
 export interface TodayView {
   plan: DailyPlan | undefined;
+  planned: readonly TodayTask[];
   focus: readonly TodayTask[];
   later: readonly TodayTask[];
   doing: readonly Task[];
@@ -82,9 +83,23 @@ export interface CreateProjectInput {
   areaId?: string;
 }
 
+export interface CreateWorkPackageInput {
+  projectId: string;
+  title: string;
+  note?: string;
+  parentId?: string;
+}
+
+export interface UpdateWorkPackageInput {
+  title: string;
+  note: string | null;
+  parentId: string | null;
+}
+
 export interface ProjectOverview {
   project: Project;
-  focusTask: Task | undefined;
+  doingTasks: readonly Task[];
+  nextReadyTask: Task | undefined;
   progress: ProjectProgress;
   waitingCount: number;
   nextCandidateCount: number;
@@ -115,12 +130,14 @@ export interface ProjectDetail {
   someday: readonly Task[];
   recentlyCompleted: readonly Task[];
   recentActivity: readonly ProjectActivity[];
-  structure: readonly ProjectStructureNode[];
+  structure: readonly WorkPackageStructureNode[];
+  ungroupedActions: readonly Task[];
 }
 
-export interface ProjectStructureNode {
-  task: Task;
-  children: readonly ProjectStructureNode[];
+export interface WorkPackageStructureNode {
+  workPackage: WorkPackage;
+  children: readonly WorkPackageStructureNode[];
+  actions: readonly Task[];
   progress: ProjectProgress;
 }
 
@@ -237,7 +254,7 @@ function compactTaskDetails(task: Task, input: UpdateTaskDetailsInput, now: stri
   const {
     note: _note,
     projectId: _projectId,
-    parentTaskId: _parentTaskId,
+    workPackageId: _workPackageId,
     deadlineAt: _deadlineAt,
     reviewAt: _reviewAt,
     estimateMinutes: _estimateMinutes,
@@ -258,7 +275,7 @@ function compactTaskDetails(task: Task, input: UpdateTaskDetailsInput, now: stri
     revision: task.revision + 1,
     ...(input.note === null || input.note.trim().length === 0 ? {} : { note: input.note.trim() }),
     ...(input.projectId === null ? {} : { projectId: input.projectId }),
-    ...(input.parentTaskId === null ? {} : { parentTaskId: input.parentTaskId }),
+    ...(input.workPackageId === null ? {} : { workPackageId: input.workPackageId }),
     ...(input.deadlineAt === null ? {} : { deadlineAt: input.deadlineAt }),
     ...(input.reviewAt === null ? {} : { reviewAt: input.reviewAt }),
     ...(input.estimateMinutes === null ? {} : { estimateMinutes: input.estimateMinutes }),
@@ -269,61 +286,27 @@ function compactTaskDetails(task: Task, input: UpdateTaskDetailsInput, now: stri
   };
 }
 
-function isActionTask(task: Task): boolean {
-  return task.kind !== "WORK_PACKAGE";
-}
-
-async function validateTaskParent(
+async function validateWorkPackageAssignment(
   transaction: StorageTransaction,
   input: {
-    currentTaskId?: string;
-    kind: TaskKind;
-    parentTaskId?: string;
+    workPackageId?: string;
     projectId?: string;
   },
 ): Promise<void> {
-  if (input.parentTaskId === undefined) {
+  if (input.workPackageId === undefined) {
     return;
   }
   if (input.projectId === undefined) {
-    throw new Error("A structured task must belong to a project");
+    throw new Error("A packaged task must belong to a project");
   }
-
-  let cursorId: string | undefined = input.parentTaskId;
-  let parentDepth = 0;
-  const visited = new Set<string>();
-
-  while (cursorId !== undefined) {
-    if (cursorId === input.currentTaskId || visited.has(cursorId)) {
-      throw new Error("Project structure cannot contain a cycle");
-    }
-    visited.add(cursorId);
-    const parent = await transaction.tasks.findById(cursorId);
-    if (
-      parent === undefined ||
-      parent.kind !== "WORK_PACKAGE" ||
-      parent.projectId !== input.projectId
-    ) {
-      throw new Error("Parent must be a work package in the same project");
-    }
-    parentDepth += 1;
-    cursorId = parent.parentTaskId;
+  const workPackage = await transaction.workPackages.findById(input.workPackageId);
+  if (
+    workPackage === undefined ||
+    workPackage.deletedAt !== undefined ||
+    workPackage.projectId !== input.projectId
+  ) {
+    throw new Error("Work package must belong to the same project");
   }
-
-  const level = parentDepth + 1;
-  const maxLevel = input.kind === "WORK_PACKAGE" ? 2 : 3;
-  if (level > maxLevel) {
-    throw new Error("Project structure supports at most three levels");
-  }
-}
-
-function withoutProjectFocus(project: Project, occurredAt: string): Project {
-  const { focusTaskId: _focusTaskId, ...projectWithoutFocus } = project;
-  return {
-    ...projectWithoutFocus,
-    updatedAt: occurredAt,
-    revision: project.revision + 1,
-  };
 }
 
 async function persistProjectMutation(
@@ -347,6 +330,52 @@ async function persistProjectMutation(
   );
 }
 
+async function persistWorkPackageMutation(
+  transaction: StorageTransaction,
+  workPackage: WorkPackage,
+  occurredAt: string,
+  generateId: () => string,
+): Promise<void> {
+  await transaction.workPackages.save(workPackage);
+  await transaction.outbox.append(
+    createOutboxMutation(
+      {
+        userId: workPackage.userId,
+        entityType: "WORK_PACKAGE",
+        entityId: workPackage.id,
+        payload: workPackage,
+      },
+      occurredAt,
+      generateId,
+    ),
+  );
+}
+
+async function validateWorkPackageParent(
+  transaction: StorageTransaction,
+  input: {
+    projectId: string;
+    parentId?: string;
+    currentId?: string;
+  },
+): Promise<void> {
+  if (input.parentId === undefined) {
+    return;
+  }
+  if (input.parentId === input.currentId) {
+    throw new Error("A work package cannot contain itself");
+  }
+  const parent = await transaction.workPackages.findById(input.parentId);
+  if (
+    parent === undefined ||
+    parent.deletedAt !== undefined ||
+    parent.projectId !== input.projectId ||
+    parent.parentId !== undefined
+  ) {
+    throw new Error("Child work packages require a root package in the same project");
+  }
+}
+
 export class TaskApplicationService {
   constructor(private readonly dependencies: TaskApplicationDependencies) {}
 
@@ -366,8 +395,7 @@ export class TaskApplicationService {
       ...(input.note === undefined ? {} : { note: input.note }),
       ...(input.areaId === undefined ? {} : { areaId: input.areaId }),
       ...(input.projectId === undefined ? {} : { projectId: input.projectId }),
-      ...(input.parentTaskId === undefined ? {} : { parentTaskId: input.parentTaskId }),
-      ...(input.kind === undefined ? {} : { kind: input.kind }),
+      ...(input.workPackageId === undefined ? {} : { workPackageId: input.workPackageId }),
       ...(input.deadlineAt === undefined ? {} : { deadlineAt: input.deadlineAt }),
       ...(input.reviewAt === undefined ? {} : { reviewAt: input.reviewAt }),
       ...(input.estimateMinutes === undefined ? {} : { estimateMinutes: input.estimateMinutes }),
@@ -393,9 +421,8 @@ export class TaskApplicationService {
           throw new Error("Active project not found");
         }
       }
-      await validateTaskParent(transaction, {
-        kind: input.kind ?? "ACTION",
-        ...(input.parentTaskId === undefined ? {} : { parentTaskId: input.parentTaskId }),
+      await validateWorkPackageAssignment(transaction, {
+        ...(input.workPackageId === undefined ? {} : { workPackageId: input.workPackageId }),
         ...(input.projectId === undefined ? {} : { projectId: input.projectId }),
       });
       await persistTaskMutation(
@@ -411,8 +438,8 @@ export class TaskApplicationService {
   }
 
   async listInbox(): Promise<readonly Task[]> {
-    return this.dependencies.database.transaction(async (transaction) =>
-      (await transaction.tasks.list({ status: "INBOX" })).filter(isActionTask),
+    return this.dependencies.database.transaction((transaction) =>
+      transaction.tasks.list({ status: "INBOX" }),
     );
   }
 
@@ -421,15 +448,13 @@ export class TaskApplicationService {
       const tasks = await transaction.tasks.list({
         statuses: ["READY", "DOING", "WAITING", "COMPLETED"],
       });
-      return tasks.filter((task) => isActionTask(task) && task.visibility !== "SNOOZED");
+      return tasks.filter((task) => task.visibility !== "SNOOZED");
     });
   }
 
-  async listProjectWorkPackages(projectId: string): Promise<readonly Task[]> {
-    return this.dependencies.database.transaction(async (transaction) =>
-      (await transaction.tasks.list({ projectId })).filter(
-        (task) => task.kind === "WORK_PACKAGE" && task.status !== "CANCELED",
-      ),
+  async listProjectWorkPackages(projectId: string): Promise<readonly WorkPackage[]> {
+    return this.dependencies.database.transaction((transaction) =>
+      transaction.workPackages.list({ projectId }),
     );
   }
 
@@ -470,10 +495,8 @@ export class TaskApplicationService {
           throw new Error("Active project not found");
         }
       }
-      await validateTaskParent(transaction, {
-        currentTaskId: current.id,
-        kind: current.kind ?? "ACTION",
-        ...(input.parentTaskId === null ? {} : { parentTaskId: input.parentTaskId }),
+      await validateWorkPackageAssignment(transaction, {
+        ...(input.workPackageId === null ? {} : { workPackageId: input.workPackageId }),
         ...(input.projectId === null ? {} : { projectId: input.projectId }),
       });
 
@@ -528,60 +551,6 @@ export class TaskApplicationService {
         });
       }
 
-      if ((current.projectId ?? null) !== input.projectId && current.projectId !== undefined) {
-        const previousProject = await transaction.projects.findById(current.projectId);
-        if (previousProject?.focusTaskId === current.id) {
-          const updatedProject = withoutProjectFocus(previousProject, occurredAt);
-          await persistProjectMutation(
-            transaction,
-            updatedProject,
-            occurredAt,
-            this.dependencies.generateId,
-          );
-          events.push({
-            id: this.dependencies.generateId(),
-            userId: task.userId,
-            taskId: task.id,
-            type: "PROJECT_FOCUS_CLEARED",
-            occurredAt,
-            metadata: {},
-          });
-        }
-      }
-
-      let nextProjectWithFocus: Project | undefined;
-      if (
-        nextProject !== undefined &&
-        task.status === "DOING" &&
-        nextProject.focusTaskId !== task.id
-      ) {
-        nextProjectWithFocus = {
-          ...withoutProjectFocus(nextProject, occurredAt),
-          focusTaskId: task.id,
-        };
-        if (nextProject.focusTaskId !== undefined) {
-          const previousFocus = await transaction.tasks.findById(nextProject.focusTaskId);
-          if (previousFocus !== undefined) {
-            events.push({
-              id: this.dependencies.generateId(),
-              userId: previousFocus.userId,
-              taskId: previousFocus.id,
-              type: "PROJECT_FOCUS_CLEARED",
-              occurredAt,
-              metadata: {},
-            });
-          }
-        }
-        events.push({
-          id: this.dependencies.generateId(),
-          userId: task.userId,
-          taskId: task.id,
-          type: "PROJECT_FOCUS_SET",
-          occurredAt,
-          metadata: {},
-        });
-      }
-
       await persistTaskMutation(
         transaction,
         task,
@@ -589,14 +558,6 @@ export class TaskApplicationService {
         occurredAt,
         this.dependencies.generateId,
       );
-      if (nextProjectWithFocus !== undefined) {
-        await persistProjectMutation(
-          transaction,
-          nextProjectWithFocus,
-          occurredAt,
-          this.dependencies.generateId,
-        );
-      }
       return task;
     });
   }
@@ -612,10 +573,6 @@ export class TaskApplicationService {
       if (current === undefined) {
         throw new Error("Task not found");
       }
-      if (current.kind === "WORK_PACKAGE" && !(current.status === "INBOX" && to === "READY")) {
-        throw new Error("A work package cannot enter the action workflow");
-      }
-
       const occurredAt = this.dependencies.now();
       const rules = await this.dependencies.loadRules?.();
       const wipLimit = rules?.wipLimit ?? this.dependencies.wipLimit ?? 3;
@@ -623,7 +580,7 @@ export class TaskApplicationService {
 
       if (to === "DOING" && current.status !== "DOING") {
         const doingTasks = (await transaction.tasks.list({ status: "DOING" })).filter(
-          (task) => isActionTask(task) && task.visibility === "ACTIVE",
+          (task) => task.visibility === "ACTIVE",
         );
 
         if (doingTasks.length >= wipLimit && options.allowWipOverride !== true) {
@@ -681,57 +638,6 @@ export class TaskApplicationService {
           },
         });
       }
-      let projectAfterTransition: Project | undefined;
-
-      if (to === "DOING" && current.projectId !== undefined) {
-        const project = await transaction.projects.findById(current.projectId);
-        if (project?.status === "ACTIVE" && project.focusTaskId !== current.id) {
-          const baseProject = withoutProjectFocus(project, occurredAt);
-          projectAfterTransition = { ...baseProject, focusTaskId: current.id };
-
-          if (project.focusTaskId !== undefined) {
-            const previousFocus = await transaction.tasks.findById(project.focusTaskId);
-            if (previousFocus !== undefined) {
-              events.push({
-                id: this.dependencies.generateId(),
-                userId: previousFocus.userId,
-                taskId: previousFocus.id,
-                type: "PROJECT_FOCUS_CLEARED",
-                occurredAt,
-                metadata: {},
-              });
-            }
-          }
-
-          events.push({
-            id: this.dependencies.generateId(),
-            userId: task.userId,
-            taskId: task.id,
-            type: "PROJECT_FOCUS_SET",
-            occurredAt,
-            metadata: {},
-          });
-        }
-      }
-
-      if (
-        (to === "WAITING" || to === "COMPLETED" || to === "CANCELED") &&
-        current.projectId !== undefined
-      ) {
-        const project = await transaction.projects.findById(current.projectId);
-        if (project?.focusTaskId === current.id) {
-          projectAfterTransition = withoutProjectFocus(project, occurredAt);
-          events.push({
-            id: this.dependencies.generateId(),
-            userId: task.userId,
-            taskId: task.id,
-            type: "PROJECT_FOCUS_CLEARED",
-            occurredAt,
-            metadata: {},
-          });
-        }
-      }
-
       await persistTaskMutation(
         transaction,
         task,
@@ -739,15 +645,6 @@ export class TaskApplicationService {
         occurredAt,
         this.dependencies.generateId,
       );
-
-      if (projectAfterTransition !== undefined) {
-        await persistProjectMutation(
-          transaction,
-          projectAfterTransition,
-          occurredAt,
-          this.dependencies.generateId,
-        );
-      }
       return task;
     });
   }
@@ -782,39 +679,13 @@ export class TaskApplicationService {
           toVisibility: to,
         },
       };
-      const events = [event];
-      let projectWithoutFocus: Project | undefined;
-
-      if (to !== "ACTIVE" && current.projectId !== undefined) {
-        const project = await transaction.projects.findById(current.projectId);
-        if (project?.focusTaskId === current.id) {
-          projectWithoutFocus = withoutProjectFocus(project, occurredAt);
-          events.push({
-            id: this.dependencies.generateId(),
-            userId: task.userId,
-            taskId: task.id,
-            type: "PROJECT_FOCUS_CLEARED",
-            occurredAt,
-            metadata: {},
-          });
-        }
-      }
-
       await persistTaskMutation(
         transaction,
         task,
-        events,
+        [event],
         occurredAt,
         this.dependencies.generateId,
       );
-      if (projectWithoutFocus !== undefined) {
-        await persistProjectMutation(
-          transaction,
-          projectWithoutFocus,
-          occurredAt,
-          this.dependencies.generateId,
-        );
-      }
       return task;
     });
   }
@@ -897,38 +768,6 @@ export class TaskApplicationService {
         });
       }
 
-      let projectWithFocus: Project | undefined;
-      if (task.status === "DOING" && task.projectId !== undefined) {
-        const project = await transaction.projects.findById(task.projectId);
-        if (project?.status === "ACTIVE" && project.focusTaskId !== task.id) {
-          projectWithFocus = {
-            ...withoutProjectFocus(project, occurredAt),
-            focusTaskId: task.id,
-          };
-          if (project.focusTaskId !== undefined) {
-            const previousFocus = await transaction.tasks.findById(project.focusTaskId);
-            if (previousFocus !== undefined) {
-              events.push({
-                id: this.dependencies.generateId(),
-                userId: previousFocus.userId,
-                taskId: previousFocus.id,
-                type: "PROJECT_FOCUS_CLEARED",
-                occurredAt,
-                metadata: {},
-              });
-            }
-          }
-          events.push({
-            id: this.dependencies.generateId(),
-            userId: task.userId,
-            taskId: task.id,
-            type: "PROJECT_FOCUS_SET",
-            occurredAt,
-            metadata: {},
-          });
-        }
-      }
-
       await persistTaskMutation(
         transaction,
         task,
@@ -936,14 +775,6 @@ export class TaskApplicationService {
         occurredAt,
         this.dependencies.generateId,
       );
-      if (projectWithFocus !== undefined) {
-        await persistProjectMutation(
-          transaction,
-          projectWithFocus,
-          occurredAt,
-          this.dependencies.generateId,
-        );
-      }
       return task;
     });
   }
@@ -982,23 +813,6 @@ export class TaskApplicationService {
           metadata: {},
         },
       ];
-      let projectWithoutFocus: Project | undefined;
-
-      if (current.projectId !== undefined) {
-        const project = await transaction.projects.findById(current.projectId);
-        if (project?.focusTaskId === current.id) {
-          projectWithoutFocus = withoutProjectFocus(project, occurredAt);
-          events.push({
-            id: this.dependencies.generateId(),
-            userId: task.userId,
-            taskId: task.id,
-            type: "PROJECT_FOCUS_CLEARED",
-            occurredAt,
-            metadata: {},
-          });
-        }
-      }
-
       await persistTaskMutation(
         transaction,
         task,
@@ -1006,14 +820,6 @@ export class TaskApplicationService {
         occurredAt,
         this.dependencies.generateId,
       );
-      if (projectWithoutFocus !== undefined) {
-        await persistProjectMutation(
-          transaction,
-          projectWithoutFocus,
-          occurredAt,
-          this.dependencies.generateId,
-        );
-      }
       return task;
     });
   }
@@ -1061,7 +867,7 @@ export class TaskApplicationService {
         throw new Error("Task not found");
       }
 
-      if (!isActionTask(task) || (task.status !== "READY" && task.status !== "DOING")) {
+      if (task.status !== "READY" && task.status !== "DOING") {
         throw new TaskNotActionableForTodayError(task.status);
       }
 
@@ -1265,7 +1071,7 @@ export class TaskApplicationService {
       );
 
       if (plan === undefined) {
-        return { plan: undefined, focus: [], later: [], doing };
+        return { plan: undefined, planned: [], focus: [], later: [], doing };
       }
 
       const items = await transaction.dailyPlanItems.listByPlanId(plan.id);
@@ -1280,11 +1086,22 @@ export class TaskApplicationService {
 
       return {
         plan,
+        planned: todayTasks.filter(
+          ({ task }) =>
+            task.visibility === "ACTIVE" &&
+            (task.status === "READY" || task.status === "DOING"),
+        ),
         focus: todayTasks.filter(
-          ({ item, task }) => item.section === "FOCUS" && task.status === "READY",
+          ({ item, task }) =>
+            item.section === "FOCUS" &&
+            task.visibility === "ACTIVE" &&
+            task.status === "READY",
         ),
         later: todayTasks.filter(
-          ({ item, task }) => item.section === "LATER" && task.status === "READY",
+          ({ item, task }) =>
+            item.section === "LATER" &&
+            task.visibility === "ACTIVE" &&
+            task.status === "READY",
         ),
         doing,
       };
@@ -1343,7 +1160,7 @@ export class ReviewApplicationService {
       const items: ReviewQueueItem[] = [];
 
       for (const task of tasks) {
-        if (!isActionTask(task) || task.status === "COMPLETED" || task.status === "CANCELED") {
+        if (task.status === "COMPLETED" || task.status === "CANCELED") {
           continue;
         }
         const reasons: ReviewReason[] = [];
@@ -1398,11 +1215,12 @@ export class ReviewApplicationService {
       const projects = await transaction.projects.list({ status: "ACTIVE" });
       const focuslessProjects: Project[] = [];
       for (const project of projects) {
-        const focusTask =
-          project.focusTaskId === undefined
-            ? undefined
-            : await transaction.tasks.findById(project.focusTaskId);
-        if (focusTask === undefined || !isProjectFocusTask(focusTask)) {
+        const projectTasks = await transaction.tasks.list({ projectId: project.id });
+        const hasExecutableTask = projectTasks.some(
+          (task) =>
+            task.visibility === "ACTIVE" && (task.status === "READY" || task.status === "DOING"),
+        );
+        if (!hasExecutableTask) {
           focuslessProjects.push(project);
         }
       }
@@ -1433,8 +1251,6 @@ export class ReviewApplicationService {
         "COMPLETED",
         "CANCELED",
         "REVIEWED",
-        "PROJECT_FOCUS_SET",
-        "PROJECT_FOCUS_CLEARED",
       ]);
 
       for (const event of events) {
@@ -1454,11 +1270,12 @@ export class ReviewApplicationService {
 
       const projects = await transaction.projects.list({ status: "ACTIVE" });
       for (const project of projects) {
-        const focusTask =
-          project.focusTaskId === undefined
-            ? undefined
-            : await transaction.tasks.findById(project.focusTaskId);
-        if (focusTask === undefined || !isProjectFocusTask(focusTask)) {
+        const projectTasks = await transaction.tasks.list({ projectId: project.id });
+        const hasExecutableTask = projectTasks.some(
+          (task) =>
+            task.visibility === "ACTIVE" && (task.status === "READY" || task.status === "DOING"),
+        );
+        if (!hasExecutableTask) {
           entries.push({
             id: `focusless-${project.id}`,
             type: "FOCUSLESS_PROJECT",
@@ -1533,29 +1350,18 @@ const projectProgressEventTypes = new Set<TaskEvent["type"]>([
   "COMPLETED",
   "REOPENED",
   "PROJECT_CHANGED",
-  "PROJECT_FOCUS_SET",
-  "PROJECT_FOCUS_CLEARED",
 ]);
 
 function isOpenTask(task: Task): boolean {
   return task.status !== "COMPLETED" && task.status !== "CANCELED";
 }
 
-function isProjectFocusTask(task: Task): boolean {
-  return (
-    isActionTask(task) &&
-    task.visibility === "ACTIVE" &&
-    (task.status === "READY" || task.status === "DOING")
-  );
-}
-
-function candidateTasks(tasks: readonly Task[], focusTaskId?: string): readonly Task[] {
+function candidateTasks(tasks: readonly Task[], firstTaskId?: string): readonly Task[] {
   return tasks.filter(
     (task) =>
-      isActionTask(task) &&
       task.status === "READY" &&
       task.visibility === "ACTIVE" &&
-      task.id !== focusTaskId,
+      task.id !== firstTaskId,
   );
 }
 
@@ -1563,7 +1369,6 @@ function completedSince(tasks: readonly Task[], weekStartsAt: string): readonly 
   return tasks
     .filter(
       (task) =>
-        isActionTask(task) &&
         task.status === "COMPLETED" &&
         task.completedAt !== undefined &&
         task.completedAt >= weekStartsAt,
@@ -1572,17 +1377,16 @@ function completedSince(tasks: readonly Task[], weekStartsAt: string): readonly 
 }
 
 function createProjectProgress(tasks: readonly Task[]): ProjectProgress {
-  const actions = tasks.filter(isActionTask);
-  const ready = actions.filter(
+  const ready = tasks.filter(
     (task) => task.status === "READY" && task.visibility === "ACTIVE",
   ).length;
-  const doing = actions.filter(
+  const doing = tasks.filter(
     (task) => task.status === "DOING" && task.visibility === "ACTIVE",
   ).length;
-  const waiting = actions.filter(
+  const waiting = tasks.filter(
     (task) => task.status === "WAITING" && task.visibility === "ACTIVE",
   ).length;
-  const completed = actions.filter((task) => task.status === "COMPLETED").length;
+  const completed = tasks.filter((task) => task.status === "COMPLETED").length;
   const total = ready + doing + waiting + completed;
 
   return {
@@ -1595,46 +1399,57 @@ function createProjectProgress(tasks: readonly Task[]): ProjectProgress {
   };
 }
 
-function createProjectStructure(tasks: readonly Task[]): readonly ProjectStructureNode[] {
-  const included = tasks.filter((task) => task.status !== "CANCELED");
-  const taskIds = new Set(included.map((task) => task.id));
-  const childrenByParent = new Map<string, Task[]>();
-
-  for (const task of included) {
-    if (task.parentTaskId === undefined || !taskIds.has(task.parentTaskId)) {
+function createProjectStructure(
+  workPackages: readonly WorkPackage[],
+  tasks: readonly Task[],
+): readonly WorkPackageStructureNode[] {
+  const activePackages = workPackages.filter((workPackage) => workPackage.deletedAt === undefined);
+  const childrenByParent = new Map<string, WorkPackage[]>();
+  for (const workPackage of activePackages) {
+    if (workPackage.parentId === undefined) {
       continue;
     }
-    const children = childrenByParent.get(task.parentTaskId) ?? [];
-    children.push(task);
-    childrenByParent.set(task.parentTaskId, children);
+    const children = childrenByParent.get(workPackage.parentId) ?? [];
+    children.push(workPackage);
+    childrenByParent.set(workPackage.parentId, children);
+  }
+  const actionsByPackage = new Map<string, Task[]>();
+  for (const task of tasks.filter((candidate) => candidate.status !== "CANCELED")) {
+    if (task.workPackageId === undefined) {
+      continue;
+    }
+    const actions = actionsByPackage.get(task.workPackageId) ?? [];
+    actions.push(task);
+    actionsByPackage.set(task.workPackageId, actions);
   }
 
-  const build = (task: Task): ProjectStructureNode => {
-    const children = [...(childrenByParent.get(task.id) ?? [])]
+  const build = (workPackage: WorkPackage): WorkPackageStructureNode => {
+    const children = [...(childrenByParent.get(workPackage.id) ?? [])]
       .sort((left, right) => left.sortKey.localeCompare(right.sortKey))
       .map(build);
-    const descendantActions: Task[] = [];
-    const collectActions = (node: ProjectStructureNode) => {
-      if (isActionTask(node.task)) {
-        descendantActions.push(node.task);
-      }
-      node.children.forEach(collectActions);
-    };
-    children.forEach(collectActions);
-    if (isActionTask(task)) {
-      descendantActions.unshift(task);
-    }
+    const actions = [...(actionsByPackage.get(workPackage.id) ?? [])].sort((left, right) =>
+      left.sortKey.localeCompare(right.sortKey),
+    );
+    const descendantActions = [
+      ...actions,
+      ...children.flatMap((child) => collectStructureActions(child)),
+    ];
     return {
-      task,
+      workPackage,
       children,
+      actions,
       progress: createProjectProgress(descendantActions),
     };
   };
 
-  return included
-    .filter((task) => task.parentTaskId === undefined || !taskIds.has(task.parentTaskId))
+  return activePackages
+    .filter((workPackage) => workPackage.parentId === undefined)
     .sort((left, right) => left.sortKey.localeCompare(right.sortKey))
     .map(build);
+}
+
+function collectStructureActions(node: WorkPackageStructureNode): readonly Task[] {
+  return [...node.actions, ...node.children.flatMap((child) => collectStructureActions(child))];
 }
 
 async function projectActivity(
@@ -1655,8 +1470,7 @@ async function projectActivity(
     for (const event of events) {
       if (
         projectProgressEventTypes.has(event.type) &&
-        (joinedAt === undefined || event.occurredAt >= joinedAt) &&
-        !(event.type === "PROJECT_FOCUS_CLEARED" && event.occurredAt === joinedAt)
+        (joinedAt === undefined || event.occurredAt >= joinedAt)
       ) {
         activity.push({ event, task });
       }
@@ -1674,19 +1488,24 @@ function createProjectOverview(
   activity: readonly ProjectActivity[],
   weekStartsAt: string,
 ): ProjectOverview {
-  const focusTask = tasks.find(
-    (task) => task.id === project.focusTaskId && isProjectFocusTask(task),
+  const doingTasks = tasks.filter(
+    (task) => task.status === "DOING" && task.visibility === "ACTIVE",
+  );
+  const nextReadyTask = tasks.find(
+    (task) => task.status === "READY" && task.visibility === "ACTIVE",
   );
 
   return {
     project,
-    focusTask,
+    doingTasks,
+    nextReadyTask,
     progress: createProjectProgress(tasks),
-    waitingCount: tasks.filter((task) => isActionTask(task) && task.status === "WAITING").length,
-    nextCandidateCount: candidateTasks(tasks, focusTask?.id).length,
+    waitingCount: tasks.filter((task) => task.status === "WAITING").length,
+    nextCandidateCount: candidateTasks(tasks, nextReadyTask?.id).length,
     completedThisWeek: completedSince(tasks, weekStartsAt).length,
     lastProgressAt: activity[0]?.event.occurredAt,
-    needsFocusDecision: project.status === "ACTIVE" && focusTask === undefined,
+    needsFocusDecision:
+      project.status === "ACTIVE" && doingTasks.length === 0 && nextReadyTask === undefined,
   };
 }
 
@@ -1753,35 +1572,37 @@ export class ProjectApplicationService {
       }
 
       const tasks = await transaction.tasks.list({ projectId, includeCanceled: true });
+      const workPackages = await transaction.workPackages.list({ projectId });
       const activity = await projectActivity(transaction, tasks, project.id);
       const overview = createProjectOverview(project, tasks, activity, weekStartsAt);
 
       return {
         overview,
-        nextCandidates: candidateTasks(tasks, overview.focusTask?.id),
-        doing: tasks.filter(
-          (task) =>
-            isActionTask(task) &&
-            task.status === "DOING" &&
-            task.visibility === "ACTIVE" &&
-            task.id !== overview.focusTask?.id,
-        ),
+        nextCandidates: candidateTasks(tasks, overview.nextReadyTask?.id),
+        doing: overview.doingTasks,
         waiting: tasks.filter(
-          (task) => isActionTask(task) && task.status === "WAITING" && task.visibility === "ACTIVE",
+          (task) => task.status === "WAITING" && task.visibility === "ACTIVE",
         ),
         someday: tasks.filter(
-          (task) => isActionTask(task) && isOpenTask(task) && task.visibility === "SOMEDAY",
+          (task) => isOpenTask(task) && task.visibility === "SOMEDAY",
         ),
         recentlyCompleted: completedSince(tasks, weekStartsAt),
         recentActivity: activity.slice(0, 8),
-        structure: createProjectStructure(tasks),
+        structure: createProjectStructure(workPackages, tasks),
+        ungroupedActions: tasks.filter(
+          (task) => task.workPackageId === undefined && task.status !== "CANCELED",
+        ),
       };
     });
   }
+}
 
-  async setFocusTask(projectId: string, taskId: string | null): Promise<Project> {
+export class WorkPackageApplicationService {
+  constructor(private readonly dependencies: TaskApplicationDependencies) {}
+
+  async create(input: CreateWorkPackageInput): Promise<WorkPackage> {
     return this.dependencies.database.transaction(async (transaction) => {
-      const project = await transaction.projects.findById(projectId);
+      const project = await transaction.projects.findById(input.projectId);
       if (
         project === undefined ||
         project.userId !== this.dependencies.userId ||
@@ -1789,66 +1610,64 @@ export class ProjectApplicationService {
       ) {
         throw new Error("Active project not found");
       }
-
-      let nextFocus: Task | undefined;
-      if (taskId !== null) {
-        nextFocus = await transaction.tasks.findById(taskId);
-        if (
-          nextFocus === undefined ||
-          !isActionTask(nextFocus) ||
-          nextFocus.projectId !== project.id ||
-          nextFocus.visibility !== "ACTIVE" ||
-          (nextFocus.status !== "READY" && nextFocus.status !== "DOING")
-        ) {
-          throw new Error("Focus task must be an actionable task in this project");
-        }
-      }
-
-      if (
-        project.focusTaskId === taskId ||
-        (project.focusTaskId === undefined && taskId === null)
-      ) {
-        return project;
-      }
-
       const occurredAt = this.dependencies.now();
-      const baseProject = withoutProjectFocus(project, occurredAt);
-      const updatedProject: Project =
-        taskId === null ? baseProject : { ...baseProject, focusTaskId: taskId };
-
-      await persistProjectMutation(
+      await validateWorkPackageParent(transaction, {
+        projectId: input.projectId,
+        ...(input.parentId === undefined ? {} : { parentId: input.parentId }),
+      });
+      const workPackage = createWorkPackage({
+        id: this.dependencies.generateId(),
+        userId: this.dependencies.userId,
+        projectId: input.projectId,
+        title: input.title,
+        now: occurredAt,
+        ...(input.note === undefined ? {} : { note: input.note }),
+        ...(input.parentId === undefined ? {} : { parentId: input.parentId }),
+      });
+      await persistWorkPackageMutation(
         transaction,
-        updatedProject,
+        workPackage,
         occurredAt,
         this.dependencies.generateId,
       );
+      return workPackage;
+    });
+  }
 
-      if (project.focusTaskId !== undefined) {
-        const previousTask = await transaction.tasks.findById(project.focusTaskId);
-        if (previousTask !== undefined) {
-          await transaction.taskEvents.append({
-            id: this.dependencies.generateId(),
-            userId: previousTask.userId,
-            taskId: previousTask.id,
-            type: "PROJECT_FOCUS_CLEARED",
-            occurredAt,
-            metadata: {},
-          });
-        }
+  async update(id: string, input: UpdateWorkPackageInput): Promise<WorkPackage> {
+    return this.dependencies.database.transaction(async (transaction) => {
+      const current = await transaction.workPackages.findById(id);
+      if (current === undefined || current.userId !== this.dependencies.userId) {
+        throw new Error("Work package not found");
       }
-
-      if (nextFocus !== undefined) {
-        await transaction.taskEvents.append({
-          id: this.dependencies.generateId(),
-          userId: nextFocus.userId,
-          taskId: nextFocus.id,
-          type: "PROJECT_FOCUS_SET",
-          occurredAt,
-          metadata: {},
-        });
+      await validateWorkPackageParent(transaction, {
+        currentId: current.id,
+        projectId: current.projectId,
+        ...(input.parentId === null ? {} : { parentId: input.parentId }),
+      });
+      const title = input.title.trim();
+      if (title.length === 0) {
+        throw new Error("Work package title is required");
       }
-
-      return updatedProject;
+      const occurredAt = this.dependencies.now();
+      const { note: _note, parentId: _parentId, ...base } = current;
+      const updated: WorkPackage = {
+        ...base,
+        title,
+        updatedAt: occurredAt,
+        revision: current.revision + 1,
+        ...(input.note === null || input.note.trim().length === 0
+          ? {}
+          : { note: input.note.trim() }),
+        ...(input.parentId === null ? {} : { parentId: input.parentId }),
+      };
+      await persistWorkPackageMutation(
+        transaction,
+        updated,
+        occurredAt,
+        this.dependencies.generateId,
+      );
+      return updated;
     });
   }
 }

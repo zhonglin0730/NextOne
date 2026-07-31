@@ -1,4 +1,12 @@
-import type { Area, DailyPlan, DailyPlanItem, Project, Task, TaskEvent } from "@nextone/domain";
+import type {
+  Area,
+  DailyPlan,
+  DailyPlanItem,
+  Project,
+  Task,
+  TaskEvent,
+  WorkPackage,
+} from "@nextone/domain";
 import type {
   AreaRepository,
   DataManagementRepository,
@@ -22,15 +30,18 @@ import type {
   TaskRepository,
   UserPreferences,
   UserPreferencesRepository,
+  WorkPackageQuery,
+  WorkPackageRepository,
 } from "@nextone/storage-contracts";
 
 const databaseName = "nextone";
-const databaseVersion = 4;
+const databaseVersion = 5;
 
 const stores = {
   tasks: "tasks",
   areas: "areas",
   projects: "projects",
+  workPackages: "workPackages",
   taskEvents: "taskEvents",
   dailyPlans: "dailyPlans",
   dailyPlanItems: "dailyPlanItems",
@@ -86,6 +97,12 @@ function createSchema(database: IDBDatabase): void {
     projectStore.createIndex("status", "status", { unique: false });
   }
 
+  if (!database.objectStoreNames.contains(stores.workPackages)) {
+    const workPackageStore = database.createObjectStore(stores.workPackages, { keyPath: "id" });
+    workPackageStore.createIndex("projectId", "projectId", { unique: false });
+    workPackageStore.createIndex("parentId", "parentId", { unique: false });
+  }
+
   if (!database.objectStoreNames.contains(stores.taskEvents)) {
     const eventStore = database.createObjectStore(stores.taskEvents, { keyPath: "id" });
     eventStore.createIndex("taskId", "taskId", { unique: false });
@@ -129,14 +146,71 @@ function createSchema(database: IDBDatabase): void {
   }
 }
 
+function migrateProjectStructure(request: IDBOpenDBRequest, oldVersion: number): void {
+  if (oldVersion >= 5 || request.transaction === null) {
+    return;
+  }
+  const taskStore = request.transaction.objectStore(stores.tasks);
+  const workPackageStore = request.transaction.objectStore(stores.workPackages);
+  const cursorRequest = taskStore.openCursor();
+  cursorRequest.addEventListener("success", () => {
+    const cursor = cursorRequest.result;
+    if (cursor === null) {
+      return;
+    }
+    const legacy = cursor.value as Task & {
+      kind?: "ACTION" | "WORK_PACKAGE";
+      parentTaskId?: string;
+    };
+    if (legacy.kind === "WORK_PACKAGE" && legacy.projectId !== undefined) {
+      const workPackage: WorkPackage = {
+        id: legacy.id,
+        userId: legacy.userId,
+        projectId: legacy.projectId,
+        title: legacy.title,
+        sortKey: legacy.sortKey,
+        createdAt: legacy.createdAt,
+        updatedAt: legacy.updatedAt,
+        revision: legacy.revision,
+        ...(legacy.parentTaskId === undefined ? {} : { parentId: legacy.parentTaskId }),
+        ...(legacy.note === undefined ? {} : { note: legacy.note }),
+        ...(legacy.deletedAt === undefined ? {} : { deletedAt: legacy.deletedAt }),
+      };
+      workPackageStore.put(workPackage);
+      cursor.delete();
+    } else {
+      const { kind: _kind, parentTaskId, ...task } = legacy;
+      cursor.update({
+        ...task,
+        ...(parentTaskId === undefined ? {} : { workPackageId: parentTaskId }),
+      });
+    }
+    cursor.continue();
+  });
+
+  const projectStore = request.transaction.objectStore(stores.projects);
+  const projectCursorRequest = projectStore.openCursor();
+  projectCursorRequest.addEventListener("success", () => {
+    const cursor = projectCursorRequest.result;
+    if (cursor === null) {
+      return;
+    }
+    const legacy = cursor.value as Project & { focusTaskId?: string };
+    const { focusTaskId: _focusTaskId, ...project } = legacy;
+    cursor.update(project);
+    cursor.continue();
+  });
+}
+
 function openDatabase(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(databaseName, databaseVersion);
 
     request.addEventListener(
       "upgradeneeded",
-      () => {
+      (event) => {
         createSchema(request.result);
+        migrateProjectStructure(request, (event as IDBVersionChangeEvent).oldVersion);
       },
       { once: true },
     );
@@ -220,6 +294,35 @@ class IndexedDbProjectRepository implements ProjectRepository {
 
   async save(project: Project): Promise<void> {
     await requestToPromise(this.store.put(project));
+  }
+}
+
+class IndexedDbWorkPackageRepository implements WorkPackageRepository {
+  constructor(private readonly store: IDBObjectStore) {}
+
+  async findById(id: string): Promise<WorkPackage | undefined> {
+    return requestToPromise(this.store.get(id) as IDBRequest<WorkPackage | undefined>);
+  }
+
+  async list(query?: WorkPackageQuery): Promise<readonly WorkPackage[]> {
+    const workPackages = await requestToPromise(
+      this.store.getAll() as IDBRequest<WorkPackage[]>,
+    );
+    return workPackages
+      .filter(
+        (workPackage) =>
+          workPackage.deletedAt === undefined &&
+          (query?.projectId === undefined || workPackage.projectId === query.projectId) &&
+          (query?.parentId === undefined ||
+            (query.parentId === null
+              ? workPackage.parentId === undefined
+              : workPackage.parentId === query.parentId)),
+      )
+      .sort((left, right) => left.sortKey.localeCompare(right.sortKey));
+  }
+
+  async save(workPackage: WorkPackage): Promise<void> {
+    await requestToPromise(this.store.put(workPackage));
   }
 }
 
@@ -387,11 +490,23 @@ class IndexedDbDataManagementRepository implements DataManagementRepository {
   }
 
   async exportSnapshot(exportedAt: string): Promise<LocalDataSnapshot> {
-    const [tasks, areas, projects, taskEvents, dailyPlans, dailyPlanItems, preferences] =
+    const [
+      tasks,
+      areas,
+      projects,
+      workPackages,
+      taskEvents,
+      dailyPlans,
+      dailyPlanItems,
+      preferences,
+    ] =
       await Promise.all([
         requestToPromise(this.store("tasks").getAll() as IDBRequest<Task[]>),
         requestToPromise(this.store("areas").getAll() as IDBRequest<Area[]>),
         requestToPromise(this.store("projects").getAll() as IDBRequest<Project[]>),
+        requestToPromise(
+          this.store("workPackages").getAll() as IDBRequest<WorkPackage[]>,
+        ),
         requestToPromise(this.store("taskEvents").getAll() as IDBRequest<TaskEvent[]>),
         requestToPromise(this.store("dailyPlans").getAll() as IDBRequest<DailyPlan[]>),
         requestToPromise(this.store("dailyPlanItems").getAll() as IDBRequest<DailyPlanItem[]>),
@@ -400,11 +515,12 @@ class IndexedDbDataManagementRepository implements DataManagementRepository {
         ),
       ]);
     return {
-      schemaVersion: 1,
+      schemaVersion: 2,
       exportedAt,
       tasks,
       areas,
       projects,
+      workPackages,
       taskEvents,
       dailyPlans,
       dailyPlanItems,
@@ -417,6 +533,7 @@ class IndexedDbDataManagementRepository implements DataManagementRepository {
       "tasks",
       "areas",
       "projects",
+      "workPackages",
       "taskEvents",
       "dailyPlans",
       "dailyPlanItems",
@@ -433,6 +550,9 @@ class IndexedDbDataManagementRepository implements DataManagementRepository {
     }
     for (const value of snapshot.projects) {
       await requestToPromise(this.store("projects").put(value));
+    }
+    for (const value of snapshot.workPackages) {
+      await requestToPromise(this.store("workPackages").put(value));
     }
     for (const value of snapshot.tasks) {
       await requestToPromise(this.store("tasks").put(value));
@@ -470,6 +590,13 @@ class IndexedDbDataManagementRepository implements DataManagementRepository {
         revision: task.revision,
         deleted: task.deletedAt !== undefined,
         payload: task,
+      })),
+      ...snapshot.workPackages.map((workPackage) => ({
+        entityType: "WORK_PACKAGE" as const,
+        id: workPackage.id,
+        revision: workPackage.revision,
+        deleted: workPackage.deletedAt !== undefined,
+        payload: workPackage,
       })),
       ...snapshot.dailyPlans.map((plan) => ({
         entityType: "DAILY_PLAN" as const,
@@ -524,12 +651,13 @@ export class IndexedDbLocalDatabase implements LocalDatabase {
     snapshot: LocalDataSnapshot,
     cursor: number,
     synchronizedAt: string,
-  ): Promise<void> {
+  ): Promise<boolean> {
     const database = await this.getDatabase();
     const serverControlledStores = [
       stores.tasks,
       stores.areas,
       stores.projects,
+      stores.workPackages,
       stores.taskEvents,
       stores.dailyPlans,
       stores.dailyPlanItems,
@@ -539,6 +667,24 @@ export class IndexedDbLocalDatabase implements LocalDatabase {
     ] as const;
     const indexedDbTransaction = database.transaction(serverControlledStores, "readwrite");
     const completion = transactionToPromise(indexedDbTransaction);
+    const [outbox, conflicts] = await Promise.all([
+      requestToPromise(
+        indexedDbTransaction.objectStore(stores.outbox).getAll() as IDBRequest<OutboxMutation[]>,
+      ),
+      requestToPromise(
+        indexedDbTransaction.objectStore(stores.syncConflicts).getAll() as IDBRequest<
+          SyncConflict[]
+        >,
+      ),
+    ]);
+
+    if (
+      outbox.length > 0 ||
+      conflicts.some((conflict) => conflict.resolvedAt === undefined)
+    ) {
+      await completion;
+      return false;
+    }
 
     for (const storeName of serverControlledStores) {
       await requestToPromise(indexedDbTransaction.objectStore(storeName).clear());
@@ -548,6 +694,11 @@ export class IndexedDbLocalDatabase implements LocalDatabase {
     }
     for (const value of snapshot.projects) {
       await requestToPromise(indexedDbTransaction.objectStore(stores.projects).put(value));
+    }
+    for (const value of snapshot.workPackages) {
+      await requestToPromise(
+        indexedDbTransaction.objectStore(stores.workPackages).put(value),
+      );
     }
     for (const value of snapshot.tasks) {
       await requestToPromise(indexedDbTransaction.objectStore(stores.tasks).put(value));
@@ -571,6 +722,7 @@ export class IndexedDbLocalDatabase implements LocalDatabase {
       } satisfies SyncState),
     );
     await completion;
+    return true;
   }
 
   async transaction<T>(work: (transaction: StorageTransaction) => Promise<T>): Promise<T> {
@@ -587,6 +739,9 @@ export class IndexedDbLocalDatabase implements LocalDatabase {
       tasks: new IndexedDbTaskRepository(indexedDbTransaction.objectStore(stores.tasks)),
       areas: new IndexedDbAreaRepository(indexedDbTransaction.objectStore(stores.areas)),
       projects: new IndexedDbProjectRepository(indexedDbTransaction.objectStore(stores.projects)),
+      workPackages: new IndexedDbWorkPackageRepository(
+        indexedDbTransaction.objectStore(stores.workPackages),
+      ),
       taskEvents: new IndexedDbTaskEventRepository(
         indexedDbTransaction.objectStore(stores.taskEvents),
       ),

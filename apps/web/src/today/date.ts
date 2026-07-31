@@ -5,6 +5,11 @@ export function getLocalDate(date = new Date()): string {
   return `${year}-${month}-${day}`;
 }
 
+/** Keep API timestamps usable in native date inputs and compact task summaries. */
+export function getDateOnly(value?: string): string {
+  return value === undefined ? "" : value.slice(0, 10);
+}
+
 export function getTimeZone(): string {
   return (
     localStorage.getItem("nextone.preferences.timeZone") ??

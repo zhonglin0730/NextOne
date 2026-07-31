@@ -59,14 +59,6 @@ public class ProjectController {
         );
     }
 
-    @PostMapping("/{projectId}/focus")
-    ProjectView setFocus(
-            @PathVariable String projectId,
-            @RequestBody FocusRequest request
-    ) {
-        return service.setFocus(currentUser.id(), projectId, request.taskId());
-    }
-
     public record CreateProjectRequest(@NotBlank String name, String note) {
     }
 
@@ -78,6 +70,4 @@ public class ProjectController {
     ) {
     }
 
-    public record FocusRequest(String taskId) {
-    }
 }

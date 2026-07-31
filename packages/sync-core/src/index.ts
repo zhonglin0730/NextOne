@@ -1,4 +1,11 @@
-import type { Area, DailyPlan, DailyPlanItem, Project, Task } from "@nextone/domain";
+import type {
+  Area,
+  DailyPlan,
+  DailyPlanItem,
+  Project,
+  Task,
+  WorkPackage,
+} from "@nextone/domain";
 import type {
   LocalDatabase,
   OutboxEntityType,
@@ -135,6 +142,9 @@ async function applyPayload(
     case "PROJECT":
       await transaction.projects.save(localPayload as Project);
       break;
+    case "WORK_PACKAGE":
+      await transaction.workPackages.save(localPayload as WorkPackage);
+      break;
     case "DAILY_PLAN":
       await transaction.dailyPlans.save(localPayload as DailyPlan);
       break;
@@ -199,10 +209,21 @@ export class SyncEngine {
       await this.pushPending();
       const cursor = await this.pullChanges(state.cursor);
       await this.database.transaction(async (transaction) => {
-        const remaining = (await transaction.outbox.listAll()).filter(
-          (mutation) => mutation.status !== "BLOCKED",
-        );
+        const mutations = await transaction.outbox.listAll();
+        const blocked = mutations.filter((mutation) => mutation.status === "BLOCKED");
+        const remaining = mutations.filter((mutation) => mutation.status !== "BLOCKED");
         if (remaining.length === 0) {
+          if (blocked.length > 0) {
+            await transaction.syncState.save({
+              id: "default",
+              cursor,
+              status: "ERROR",
+              retryCount: state.retryCount,
+              lastError: blocked[0]?.lastError ?? "SYNC_CONFLICT",
+              ...(state.lastSyncAt === undefined ? {} : { lastSyncAt: state.lastSyncAt }),
+            });
+            return;
+          }
           await transaction.syncState.save({
             id: "default",
             cursor,

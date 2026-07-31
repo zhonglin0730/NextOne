@@ -119,6 +119,17 @@ export function MorningKickoff({
                       {task.estimateMinutes === undefined
                         ? ` · ${t("capacity.noEstimate")}`
                         : ` · ${t("today.minutes", { count: task.estimateMinutes })}`}
+                      {task.energyLevel === undefined
+                        ? ""
+                        : ` · ${t(
+                            `capture.energy${
+                              task.energyLevel === "LOW"
+                                ? "Low"
+                                : task.energyLevel === "MEDIUM"
+                                  ? "Medium"
+                                  : "High"
+                            }`,
+                          )}`}
                     </small>
                   </span>
                 </button>
@@ -135,6 +146,17 @@ export function MorningKickoff({
                     {task.estimateMinutes === undefined
                       ? t("capacity.noEstimate")
                       : t("today.minutes", { count: task.estimateMinutes })}
+                    {task.energyLevel === undefined
+                      ? null
+                      : ` · ${t(
+                          `capture.energy${
+                            task.energyLevel === "LOW"
+                              ? "Low"
+                              : task.energyLevel === "MEDIUM"
+                                ? "Medium"
+                                : "High"
+                          }`,
+                        )}`}
                   </small>
                 </li>
               ))}

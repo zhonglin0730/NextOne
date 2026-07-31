@@ -6,6 +6,7 @@ import { Link } from "react-router";
 
 import { ActionToast } from "../components/ActionToast";
 import { transitionWithWipConfirmation } from "../tasks/taskActions";
+import { TaskDrawer } from "../tasks/TaskDrawer";
 import {
   notifyTasksChanged,
   reviewApplicationService,
@@ -30,6 +31,7 @@ export function ReviewCenterPage() {
     Awaited<ReturnType<typeof reviewApplicationService.getActivity>>
   >([]);
   const [reviewDates, setReviewDates] = useState<Record<string, string>>({});
+  const [selectedTask, setSelectedTask] = useState<Task>();
   const [error, setError] = useState("");
   const [feedback, setFeedback] = useState("");
 
@@ -127,6 +129,7 @@ export function ReviewCenterPage() {
     try {
       setFeedback("");
       const updated = await taskApplicationService.moveToBoardColumn(task.id, "SOMEDAY");
+      await taskApplicationService.removeFromToday(task.id, getLocalDate());
       await taskApplicationService.acknowledgeReview(updated.id);
       notifyTasksChanged();
       setFeedback(t("review.feedback.someday", { title: task.title }));
@@ -143,6 +146,7 @@ export function ReviewCenterPage() {
     try {
       setFeedback("");
       await taskApplicationService.setReviewDate(task.id, reviewAt);
+      await taskApplicationService.removeFromToday(task.id, getLocalDate());
       notifyTasksChanged();
       setFeedback(t("review.feedback.reviewDateSet", { title: task.title, date: reviewAt }));
     } catch {
@@ -232,16 +236,34 @@ export function ReviewCenterPage() {
                     </>
                   ) : null}
                   {task.status === "DOING" ? (
-                    <button
-                      className="button button-primary button-small"
-                      onClick={() => void acknowledge(task, "review.feedback.continueDoing")}
-                      type="button"
-                    >
-                      {t("review.continueDoing")}
-                    </button>
+                    <>
+                      <button
+                        className="button button-primary button-small"
+                        onClick={() => void addToday(task)}
+                        type="button"
+                      >
+                        {t("task.addToday")}
+                      </button>
+                      <button
+                        className="button button-outline button-small"
+                        onClick={() => void acknowledge(task, "review.feedback.continueDoing")}
+                        type="button"
+                      >
+                        {t("review.continueDoing")}
+                      </button>
+                    </>
                   ) : null}
                   {task.status === "WAITING" ? (
                     <>
+                      <button
+                        className="button button-quiet button-small"
+                        onClick={() => setSelectedTask(task)}
+                        type="button"
+                      >
+                        {task.waitingFor === undefined || task.reviewAt === undefined
+                          ? t("task.setFollowUp")
+                          : t("task.editFollowUp")}
+                      </button>
                       <button
                         className="button button-primary button-small"
                         onClick={() => void transition(task, "READY")}
@@ -358,6 +380,16 @@ export function ReviewCenterPage() {
           </ol>
         )}
       </section>
+      {selectedTask !== undefined ? (
+        <TaskDrawer
+          onClose={() => setSelectedTask(undefined)}
+          onTaskChanged={(updated) => {
+            setSelectedTask(updated);
+            void load();
+          }}
+          task={selectedTask}
+        />
+      ) : null}
     </section>
   );
 }

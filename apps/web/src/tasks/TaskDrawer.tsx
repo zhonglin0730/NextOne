@@ -5,11 +5,12 @@ import {
   type Task,
   type TaskEvent,
   type TaskStatus,
+  type WorkPackage,
 } from "@nextone/domain";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 
-import { getLocalDate, getTimeZone } from "../today/date";
+import { getDateOnly, getLocalDate, getTimeZone } from "../today/date";
 import { transitionWithWipConfirmation } from "./taskActions";
 import {
   notifyTasksChanged,
@@ -28,15 +29,15 @@ export function TaskDrawer({ task, onClose, onTaskChanged }: TaskDrawerProps) {
   const [title, setTitle] = useState(task.title);
   const [note, setNote] = useState(task.note ?? "");
   const [projectId, setProjectId] = useState(task.projectId ?? "");
-  const [parentTaskId, setParentTaskId] = useState(task.parentTaskId ?? "");
-  const [deadlineAt, setDeadlineAt] = useState(task.deadlineAt ?? "");
-  const [reviewAt, setReviewAt] = useState(task.reviewAt ?? "");
+  const [workPackageId, setWorkPackageId] = useState(task.workPackageId ?? "");
+  const [deadlineAt, setDeadlineAt] = useState(getDateOnly(task.deadlineAt));
+  const [reviewAt, setReviewAt] = useState(getDateOnly(task.reviewAt));
   const [estimateMinutes, setEstimateMinutes] = useState(task.estimateMinutes?.toString() ?? "");
   const [energyLevel, setEnergyLevel] = useState<EnergyLevel | "">(task.energyLevel ?? "");
   const [waitingFor, setWaitingFor] = useState(task.waitingFor ?? "");
   const [events, setEvents] = useState<readonly TaskEvent[]>([]);
   const [projects, setProjects] = useState<readonly Project[]>([]);
-  const [workPackages, setWorkPackages] = useState<readonly Task[]>([]);
+  const [workPackages, setWorkPackages] = useState<readonly WorkPackage[]>([]);
   const [addedToday, setAddedToday] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [dirty, setDirty] = useState(false);
@@ -55,9 +56,9 @@ export function TaskDrawer({ task, onClose, onTaskChanged }: TaskDrawerProps) {
     setTitle(task.title);
     setNote(task.note ?? "");
     setProjectId(task.projectId ?? "");
-    setParentTaskId(task.parentTaskId ?? "");
-    setDeadlineAt(task.deadlineAt ?? "");
-    setReviewAt(task.reviewAt ?? "");
+    setWorkPackageId(task.workPackageId ?? "");
+    setDeadlineAt(getDateOnly(task.deadlineAt));
+    setReviewAt(getDateOnly(task.reviewAt));
     setEstimateMinutes(task.estimateMinutes?.toString() ?? "");
     setEnergyLevel(task.energyLevel ?? "");
     setWaitingFor(task.waitingFor ?? "");
@@ -73,7 +74,7 @@ export function TaskDrawer({ task, onClose, onTaskChanged }: TaskDrawerProps) {
     }
     void taskApplicationService
       .listProjectWorkPackages(projectId)
-      .then((packages) => setWorkPackages(packages.filter((item) => item.id !== task.id)));
+      .then(setWorkPackages);
   }, [projectId, task.id]);
 
   useEffect(() => {
@@ -113,7 +114,7 @@ export function TaskDrawer({ task, onClose, onTaskChanged }: TaskDrawerProps) {
         title,
         note: note.trim().length === 0 ? null : note,
         projectId: projectId.length === 0 ? null : projectId,
-        parentTaskId: parentTaskId.length === 0 ? null : parentTaskId,
+        workPackageId: workPackageId.length === 0 ? null : workPackageId,
         deadlineAt: deadlineAt.length === 0 ? null : deadlineAt,
         reviewAt: reviewAt.length === 0 ? null : reviewAt,
         estimateMinutes: estimateMinutes.length === 0 ? null : Number.parseInt(estimateMinutes, 10),
@@ -151,6 +152,9 @@ export function TaskDrawer({ task, onClose, onTaskChanged }: TaskDrawerProps) {
       );
       if (updated === undefined) {
         return;
+      }
+      if (status === "WAITING") {
+        setAddedToday(false);
       }
       onTaskChanged(updated);
       await loadEvents();
@@ -232,7 +236,7 @@ export function TaskDrawer({ task, onClose, onTaskChanged }: TaskDrawerProps) {
             {t(`status.${task.status}`)}
           </span>
           <div className="status-actions">
-            {task.status === "READY" ? (
+            {task.status === "READY" || task.status === "DOING" ? (
               <button
                 className="button button-outline"
                 disabled={submitting || addedToday}
@@ -290,7 +294,7 @@ export function TaskDrawer({ task, onClose, onTaskChanged }: TaskDrawerProps) {
             <select
               onChange={(event) => {
                 setProjectId(event.target.value);
-                setParentTaskId("");
+                setWorkPackageId("");
                 markDirty();
               }}
               value={projectId}
@@ -308,10 +312,10 @@ export function TaskDrawer({ task, onClose, onTaskChanged }: TaskDrawerProps) {
               <span>{t("task.workPackage")}</span>
               <select
                 onChange={(event) => {
-                  setParentTaskId(event.target.value);
+                  setWorkPackageId(event.target.value);
                   markDirty();
                 }}
-                value={parentTaskId}
+                value={workPackageId}
               >
                 <option value="">{t("task.workPackageRoot")}</option>
                 {workPackages.map((workPackage) => (
@@ -360,22 +364,27 @@ export function TaskDrawer({ task, onClose, onTaskChanged }: TaskDrawerProps) {
               type="number"
               value={estimateMinutes}
             />
+            <small>{t("task.estimateHint")}</small>
           </label>
-          <label className="form-field">
-            <span>{t("task.energy")}</span>
-            <select
-              onChange={(event) => {
-                setEnergyLevel(event.target.value as EnergyLevel | "");
-                markDirty();
-              }}
-              value={energyLevel}
-            >
-              <option value="">{t("capture.energyNone")}</option>
-              <option value="LOW">{t("capture.energyLow")}</option>
-              <option value="MEDIUM">{t("capture.energyMedium")}</option>
-              <option value="HIGH">{t("capture.energyHigh")}</option>
-            </select>
-          </label>
+          <details className="task-advanced details-span">
+            <summary>{t("capture.advanced")}</summary>
+            <label className="form-field">
+              <span>{t("task.energy")}</span>
+              <select
+                onChange={(event) => {
+                  setEnergyLevel(event.target.value as EnergyLevel | "");
+                  markDirty();
+                }}
+                value={energyLevel}
+              >
+                <option value="">{t("capture.energyNone")}</option>
+                <option value="LOW">{t("capture.energyLow")}</option>
+                <option value="MEDIUM">{t("capture.energyMedium")}</option>
+                <option value="HIGH">{t("capture.energyHigh")}</option>
+              </select>
+              <small>{t("task.energyHint")}</small>
+            </label>
+          </details>
           {task.status === "WAITING" ? (
             <label className="form-field details-span">
               <span>{t("task.waitingFor")}</span>

@@ -2,7 +2,7 @@ import type { ProjectDetail } from "@nextone/application";
 import type { Task, TaskStatus } from "@nextone/domain";
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
-import { Link, useLocation, useParams } from "react-router";
+import { Link, useParams } from "react-router";
 
 import { ActionToast } from "../components/ActionToast";
 import { transitionWithWipConfirmation } from "../tasks/taskActions";
@@ -13,30 +13,18 @@ import {
   taskApplicationService,
   tasksChangedEvent,
 } from "../tasks/taskService";
-import { getLocalDate, getTimeZone, getWeekStartsAt } from "../today/date";
+import { getDateOnly, getLocalDate, getTimeZone, getWeekStartsAt } from "../today/date";
 import { ProjectProgress } from "./ProjectProgress";
 
 interface ProjectTaskRowProps {
   busy?: boolean;
-  focusActionLabel?: string;
   task: Task;
-  focusAction?: boolean;
   onContinue?: (task: Task) => void;
   onOpen: (task: Task) => void;
   onReady?: (task: Task) => void;
-  onSetFocus: (task: Task) => void;
 }
 
-function ProjectTaskRow({
-  busy = false,
-  focusActionLabel,
-  task,
-  focusAction = false,
-  onContinue,
-  onOpen,
-  onReady,
-  onSetFocus,
-}: ProjectTaskRowProps) {
+function ProjectTaskRow({ busy = false, task, onContinue, onOpen, onReady }: ProjectTaskRowProps) {
   const { t } = useTranslation();
   const waitingDetailsMissing =
     task.status === "WAITING" && (task.waitingFor === undefined || task.reviewAt === undefined);
@@ -57,36 +45,20 @@ function ProjectTaskRow({
               : t("task.waitingForSummary", { value: task.waitingFor })}
             {task.reviewAt === undefined
               ? null
-              : ` · ${t("task.followUpSummary", { date: task.reviewAt })}`}
+              : ` · ${t("task.followUpSummary", { date: getDateOnly(task.reviewAt) })}`}
           </small>
         ) : null}
       </button>
-      {focusAction ? (
-        <button
-          aria-label={t("project.focusTaskAction", {
-            action: focusActionLabel ?? t("project.setFocus"),
-            title: task.title,
-          })}
-          className="button button-outline button-small"
-          disabled={busy}
-          onClick={() => onSetFocus(task)}
-          type="button"
-        >
-          {focusActionLabel ?? t("project.setFocus")}
-        </button>
-      ) : null}
       {task.status === "WAITING" && onContinue !== undefined && onReady !== undefined ? (
         <div className="project-task-row-actions">
-          {waitingDetailsMissing ? (
-            <button
-              className="button button-quiet button-small"
-              disabled={busy}
-              onClick={() => onOpen(task)}
-              type="button"
-            >
-              {t("task.completeWaitingDetails")}
-            </button>
-          ) : null}
+          <button
+            className="button button-quiet button-small"
+            disabled={busy}
+            onClick={() => onOpen(task)}
+            type="button"
+          >
+            {waitingDetailsMissing ? t("task.setFollowUp") : t("task.editFollowUp")}
+          </button>
           <button
             className="button button-primary button-small"
             disabled={busy}
@@ -111,7 +83,6 @@ function ProjectTaskRow({
 
 export function ProjectDetailPage() {
   const { i18n, t } = useTranslation();
-  const location = useLocation();
   const { projectId } = useParams();
   const weekStartsAt = useMemo(() => getWeekStartsAt(), []);
   const localDate = useMemo(() => getLocalDate(), []);
@@ -138,7 +109,7 @@ export function ProjectDetailPage() {
         taskApplicationService.getToday(localDate),
       ]);
       setDetail(nextDetail);
-      setTodayTaskIds(new Set([...today.focus, ...today.later].map(({ task }) => task.id)));
+      setTodayTaskIds(new Set(today.planned.map(({ task }) => task.id)));
       setError("");
     } catch {
       setError(t("common.error"));
@@ -152,57 +123,6 @@ export function ProjectDetailPage() {
     window.addEventListener(tasksChangedEvent, load);
     return () => window.removeEventListener(tasksChangedEvent, load);
   }, [load]);
-
-  useEffect(() => {
-    if (!loading && detail !== undefined && location.hash === "#project-focus") {
-      window.requestAnimationFrame(() => {
-        document.getElementById("project-focus")?.scrollIntoView({
-          behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
-            ? "auto"
-            : "smooth",
-          block: "start",
-        });
-      });
-    }
-  }, [detail, loading, location.hash]);
-
-  const setFocus = async (task: Task) => {
-    if (projectId === undefined) {
-      return;
-    }
-
-    const currentFocus = detail?.overview.focusTask;
-    if (
-      currentFocus !== undefined &&
-      currentFocus.id !== task.id &&
-      !window.confirm(
-        t("project.replaceFocusConfirm", {
-          current: currentFocus.title,
-          next: task.title,
-        }),
-      )
-    ) {
-      return;
-    }
-
-    setBusyTaskId(task.id);
-    try {
-      await projectApplicationService.setFocusTask(projectId, task.id);
-      setFeedback(
-        currentFocus === undefined
-          ? t("project.feedback.focusSet", { title: task.title })
-          : t("project.feedback.focusReplaced", {
-              current: currentFocus.title,
-              next: task.title,
-            }),
-      );
-      notifyTasksChanged();
-    } catch {
-      setError(t("common.error"));
-    } finally {
-      setBusyTaskId(undefined);
-    }
-  };
 
   const transition = async (task: Task, status: TaskStatus): Promise<Task | undefined> => {
     setBusyTaskId(task.id);
@@ -230,7 +150,7 @@ export function ProjectDetailPage() {
     }
   };
 
-  const addFocusToday = async (task: Task) => {
+  const addToday = async (task: Task) => {
     if (todayTaskIds.has(task.id) || addingTodayTaskId !== undefined) {
       return;
     }
@@ -301,16 +221,9 @@ export function ProjectDetailPage() {
   }
 
   const { overview } = detail;
-  const recommended =
-    overview.focusTask === undefined ? (detail.doing[0] ?? detail.nextCandidates[0]) : undefined;
-  const visibleCandidates =
-    recommended === undefined || recommended.status === "DOING"
-      ? detail.nextCandidates
-      : detail.nextCandidates.filter((task) => task.id !== recommended.id);
-  const visibleDoing =
-    recommended?.status === "DOING"
-      ? detail.doing.filter((task) => task.id !== recommended.id)
-      : detail.doing;
+  const doingTasks = overview.doingTasks;
+  const nextReadyTask = overview.nextReadyTask;
+  const visibleCandidates = detail.nextCandidates;
 
   return (
     <section className="page project-detail-page" aria-labelledby="project-detail-title">
@@ -351,110 +264,114 @@ export function ProjectDetailPage() {
 
       <div className="project-detail-layout">
         <div className="project-detail-main">
-          <section className="project-detail-section project-focus-section" id="project-focus">
+          <section className="project-detail-section project-focus-section">
             <header>
               <div>
-                <p className="eyebrow">{t("project.currentFocus")}</p>
-                <h2>{t("project.nextStepTitle")}</h2>
-                <p className="project-focus-guidance">{t("project.singleFocusDescription")}</p>
+                <p className="eyebrow">{t("project.executionEyebrow")}</p>
+                <h2>{t("project.doingTitle", { count: doingTasks.length })}</h2>
+                <p className="project-focus-guidance">{t("project.doingGuidance")}</p>
               </div>
-              {overview.focusTask === undefined ? (
-                <span className="project-health project-health-decision">
-                  {t("project.needsDecision")}
-                </span>
-              ) : null}
+              <span className="count-pill">{doingTasks.length}</span>
             </header>
 
-            {overview.focusTask === undefined ? (
-              recommended === undefined ? (
-                <div className="project-focus-empty">
-                  <strong>{t("project.noFocus")}</strong>
-                  <p>{t("project.noCandidateDescription")}</p>
-                </div>
-              ) : (
-                <div className="project-recommendation">
-                  <span>
-                    {recommended.status === "DOING"
-                      ? t("project.recommendedDoing")
-                      : t("project.recommendedNext")}
-                  </span>
-                  <button onClick={() => setSelectedTask(recommended)} type="button">
-                    {recommended.title}
-                  </button>
-                  <button
-                    aria-label={t("project.focusTaskAction", {
-                      action: t("project.makeFocus"),
-                      title: recommended.title,
-                    })}
-                    className="button button-primary button-small"
-                    disabled={busyTaskId === recommended.id}
-                    onClick={() => void setFocus(recommended)}
-                    type="button"
-                  >
-                    {busyTaskId === recommended.id
-                      ? t("project.settingFocus")
-                      : t("project.makeFocus")}
-                  </button>
-                </div>
-              )
+            {doingTasks.length === 0 ? (
+              <p className="inline-empty">{t("project.noDoing")}</p>
+            ) : (
+              <div className="project-active-task-list">
+                {doingTasks.map((task) => (
+                  <div className="project-focus-active" key={task.id}>
+                    <button onClick={() => setSelectedTask(task)} type="button">
+                      <strong>{task.title}</strong>
+                      <span>{t(`status.${task.status}`)}</span>
+                    </button>
+                    <div className="card-actions">
+                      <button
+                        className="button button-primary button-small"
+                        disabled={busyTaskId === task.id}
+                        onClick={() => void transition(task, "COMPLETED")}
+                        type="button"
+                      >
+                        {t("action.COMPLETED")}
+                      </button>
+                      <button
+                        className="button button-outline button-small"
+                        disabled={todayTaskIds.has(task.id) || addingTodayTaskId === task.id}
+                        onClick={() => void addToday(task)}
+                        type="button"
+                      >
+                        {addingTodayTaskId === task.id
+                          ? t("project.addingToday")
+                          : todayTaskIds.has(task.id)
+                            ? t("project.addedToday")
+                            : t("project.addToday")}
+                      </button>
+                      <button
+                        className="button button-outline button-small"
+                        disabled={busyTaskId === task.id}
+                        onClick={() => void transition(task, "READY")}
+                        type="button"
+                      >
+                        {t("action.pause")}
+                      </button>
+                      <button
+                        className="button button-outline button-small"
+                        disabled={busyTaskId === task.id}
+                        onClick={() => void transition(task, "WAITING")}
+                        type="button"
+                      >
+                        {t("action.WAITING")}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+
+          <section className="project-detail-section project-next-ready-section">
+            <header>
+              <div>
+                <p className="eyebrow">{t("project.nextReadyEyebrow")}</p>
+                <h2>{t("project.nextReadyTitle")}</h2>
+                <p>{t("project.nextReadyDescription")}</p>
+              </div>
+            </header>
+
+            {nextReadyTask === undefined ? (
+              <p className="inline-empty">{t("project.noNextReady")}</p>
             ) : (
               <div className="project-focus-active">
-                <button onClick={() => setSelectedTask(overview.focusTask)} type="button">
-                  <strong>{overview.focusTask.title}</strong>
-                  <span>{t(`status.${overview.focusTask.status}`)}</span>
+                <button onClick={() => setSelectedTask(nextReadyTask)} type="button">
+                  <strong>{nextReadyTask.title}</strong>
+                  <span>{t(`status.${nextReadyTask.status}`)}</span>
                 </button>
                 <div className="card-actions">
-                  {overview.focusTask.status === "READY" ? (
-                    <button
-                      className="button button-primary button-small"
-                      disabled={busyTaskId === overview.focusTask.id}
-                      onClick={() => void transition(overview.focusTask!, "DOING")}
-                      type="button"
-                    >
-                      {t("action.DOING")}
-                    </button>
-                  ) : null}
-                  {overview.focusTask.status === "DOING" ? (
-                    <button
-                      className="button button-primary button-small"
-                      disabled={busyTaskId === overview.focusTask.id}
-                      onClick={() => void transition(overview.focusTask!, "COMPLETED")}
-                      type="button"
-                    >
-                      {t("action.COMPLETED")}
-                    </button>
-                  ) : null}
-                  {overview.focusTask.status === "DOING" ? (
-                    <button
-                      className="button button-outline button-small"
-                      disabled={busyTaskId === overview.focusTask.id}
-                      onClick={() => void transition(overview.focusTask!, "READY")}
-                      type="button"
-                    >
-                      {t("action.pause")}
-                    </button>
-                  ) : null}
-                  {overview.focusTask.status === "READY" ? (
-                    <button
-                      className="button button-outline button-small"
-                      disabled={
-                        todayTaskIds.has(overview.focusTask.id) ||
-                        addingTodayTaskId === overview.focusTask.id
-                      }
-                      onClick={() => void addFocusToday(overview.focusTask!)}
-                      type="button"
-                    >
-                      {addingTodayTaskId === overview.focusTask.id
-                        ? t("project.addingToday")
-                        : todayTaskIds.has(overview.focusTask.id)
-                          ? t("project.addedToday")
-                          : t("project.addToday")}
-                    </button>
-                  ) : null}
+                  <button
+                    className="button button-primary button-small"
+                    disabled={busyTaskId === nextReadyTask.id}
+                    onClick={() => void transition(nextReadyTask, "DOING")}
+                    type="button"
+                  >
+                    {t("action.DOING")}
+                  </button>
                   <button
                     className="button button-outline button-small"
-                    disabled={busyTaskId === overview.focusTask.id}
-                    onClick={() => void transition(overview.focusTask!, "WAITING")}
+                    disabled={
+                      todayTaskIds.has(nextReadyTask.id) || addingTodayTaskId === nextReadyTask.id
+                    }
+                    onClick={() => void addToday(nextReadyTask)}
+                    type="button"
+                  >
+                    {addingTodayTaskId === nextReadyTask.id
+                      ? t("project.addingToday")
+                      : todayTaskIds.has(nextReadyTask.id)
+                        ? t("project.addedToday")
+                        : t("project.addToday")}
+                  </button>
+                  <button
+                    className="button button-outline button-small"
+                    disabled={busyTaskId === nextReadyTask.id}
+                    onClick={() => void transition(nextReadyTask, "WAITING")}
                     type="button"
                   >
                     {t("action.WAITING")}
@@ -468,35 +385,20 @@ export function ProjectDetailPage() {
             <header>
               <div>
                 <p className="eyebrow">{t("project.candidateCount")}</p>
-                <h2>
-                  {recommended === undefined
-                    ? t("project.nextCandidates")
-                    : t("project.otherCandidates")}
-                </h2>
+                <h2>{t("project.nextCandidates")}</h2>
               </div>
               <span className="count-pill">{visibleCandidates.length}</span>
             </header>
 
             {visibleCandidates.length === 0 ? (
-              <p className="inline-empty">
-                {recommended === undefined
-                  ? t("project.noCandidates")
-                  : t("project.noOtherCandidates")}
-              </p>
+              <p className="inline-empty">{t("project.noCandidates")}</p>
             ) : (
               <div className="project-task-list">
                 {visibleCandidates.map((task) => (
                   <ProjectTaskRow
                     busy={busyTaskId === task.id}
-                    focusAction={overview.focusTask?.id !== task.id}
-                    focusActionLabel={
-                      overview.focusTask === undefined
-                        ? t("project.setFocus")
-                        : t("project.replaceFocus")
-                    }
                     key={task.id}
                     onOpen={setSelectedTask}
-                    onSetFocus={(candidate) => void setFocus(candidate)}
                     task={task}
                   />
                 ))}
@@ -520,32 +422,6 @@ export function ProjectDetailPage() {
             </form>
           </section>
 
-          {visibleDoing.length > 0 ? (
-            <section className="project-detail-section">
-              <header>
-                <h2>{t("project.doing")}</h2>
-                <span className="count-pill">{visibleDoing.length}</span>
-              </header>
-              <div className="project-task-list">
-                {visibleDoing.map((task) => (
-                  <ProjectTaskRow
-                    busy={busyTaskId === task.id}
-                    focusAction
-                    focusActionLabel={
-                      overview.focusTask === undefined
-                        ? t("project.setFocus")
-                        : t("project.replaceFocus")
-                    }
-                    key={task.id}
-                    onOpen={setSelectedTask}
-                    onSetFocus={(candidate) => void setFocus(candidate)}
-                    task={task}
-                  />
-                ))}
-              </div>
-            </section>
-          ) : null}
-
           {detail.waiting.length > 0 ? (
             <section className="project-detail-section">
               <header>
@@ -560,7 +436,6 @@ export function ProjectDetailPage() {
                     onContinue={(waitingTask) => void transition(waitingTask, "DOING")}
                     onOpen={setSelectedTask}
                     onReady={(waitingTask) => void transition(waitingTask, "READY")}
-                    onSetFocus={(candidate) => void setFocus(candidate)}
                     task={task}
                   />
                 ))}

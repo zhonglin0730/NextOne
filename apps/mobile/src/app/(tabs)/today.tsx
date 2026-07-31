@@ -10,7 +10,7 @@ import { copy } from "@/lib/mobileCopy";
 import { colors } from "@/theme";
 
 export default function TodayPage() {
-  const { focus, doing, later, ready, loading, readyToUse, refresh, removeFromToday } = useMobile();
+  const { planned, doing, ready, loading, readyToUse, refresh, removeFromToday } = useMobile();
 
   if (!readyToUse && loading) {
     return (
@@ -20,8 +20,11 @@ export default function TodayPage() {
     );
   }
 
-  const plannedIds = new Set([...focus, ...later, ...doing].map((task) => task.id));
-  const candidates = ready.filter((task) => !plannedIds.has(task.id)).slice(0, 5);
+  const plannedIds = new Set(planned.map((task) => task.id));
+  const commitments = planned;
+  const candidates = [...doing, ...ready]
+    .filter((task) => !plannedIds.has(task.id))
+    .slice(0, 5);
 
   return (
     <Screen
@@ -31,30 +34,18 @@ export default function TodayPage() {
       onRefresh={refresh}
       title={copy.todayTitle}
     >
-      <Section count={focus.length} title={copy.focus}>
-        {focus.length === 0 ? (
+      <Section count={commitments.length} title={copy.commitments}>
+        {commitments.length === 0 ? (
           <EmptyState detail="从下方候选中选一件真正值得承诺的事。" title={copy.emptyFocus} />
         ) : (
-          focus.map((task) => (
-            <TaskCard key={task.id} onRemoveToday={() => void removeFromToday(task)} task={task} />
-          ))
-        )}
-      </Section>
-
-      <Section count={doing.length} title={copy.doing}>
-        {doing.length === 0 ? (
-          <EmptyState title={copy.emptyDoing} />
-        ) : (
-          doing.map((task) => <TaskCard key={task.id} task={task} />)
-        )}
-      </Section>
-
-      <Section count={later.length} title={copy.later}>
-        {later.length === 0 ? (
-          <EmptyState title={copy.emptyLater} />
-        ) : (
-          later.map((task) => (
-            <TaskCard key={task.id} onRemoveToday={() => void removeFromToday(task)} task={task} />
+          commitments.map((task) => (
+            <TaskCard
+              key={task.id}
+              {...(plannedIds.has(task.id)
+                ? { onRemoveToday: () => void removeFromToday(task) }
+                : {})}
+              task={task}
+            />
           ))
         )}
       </Section>

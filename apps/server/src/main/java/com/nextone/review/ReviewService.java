@@ -5,7 +5,6 @@ import com.nextone.project.ProjectRepository;
 import com.nextone.project.ProjectStatus;
 import com.nextone.project.ProjectView;
 import com.nextone.task.TaskRepository;
-import com.nextone.task.TaskKind;
 import com.nextone.task.TaskStatus;
 import com.nextone.task.TaskView;
 import com.nextone.task.TaskVisibility;
@@ -53,7 +52,7 @@ public class ReviewService {
         }
 
         for (TaskView task : tasks.list(userId, false)) {
-            if (task.kind() != TaskKind.ACTION || task.status().terminal()) {
+            if (task.status().terminal()) {
                 continue;
             }
             List<String> reasons = reasons(task, now);
@@ -65,10 +64,10 @@ public class ReviewService {
 
         List<ProjectView> focusless = projects.list(userId).stream()
                 .filter(project -> project.status() == ProjectStatus.ACTIVE)
-                .filter(project -> project.focusTaskId() == null
-                        || tasks.findById(userId, project.focusTaskId())
-                                .map(task -> task.status().terminal())
-                                .orElse(true))
+                .filter(project -> tasks.listByProject(userId, project.id()).stream()
+                        .noneMatch(task -> task.visibility() == TaskVisibility.ACTIVE
+                                && (task.status() == TaskStatus.READY
+                                || task.status() == TaskStatus.DOING)))
                 .toList();
         counts.put("FOCUSLESS_PROJECT", (long) focusless.size());
         return new ReviewQueueView(queue, focusless, counts);

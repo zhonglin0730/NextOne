@@ -20,16 +20,14 @@ import { getCaptureContext } from "./tasks/captureContext";
 import { InboxPage } from "./tasks/InboxPage";
 import { TodayPage } from "./today/TodayPage";
 
+type NavigationKey = "projects" | "today" | "inbox" | "review" | "board" | "settings";
+
 const navigation = [
   { key: "projects", path: "/projects" },
   { key: "today", path: "/today" },
   { key: "inbox", path: "/inbox" },
   { key: "review", path: "/review" },
-  { key: "board", path: "/board" },
-  { key: "settings", path: "/settings/general" },
-] as const;
-
-type NavigationKey = (typeof navigation)[number]["key"];
+] as const satisfies readonly { key: NavigationKey; path: string }[];
 
 function NavigationIcon({ name }: { name: NavigationKey }) {
   const paths: Record<NavigationKey, ReactNode> = {
@@ -88,18 +86,6 @@ function NavigationIcon({ name }: { name: NavigationKey }) {
   );
 }
 
-function PlaceholderPage({ pageKey }: { pageKey: NavigationKey }) {
-  const { t } = useTranslation();
-
-  return (
-    <section className="placeholder" aria-labelledby="page-title">
-      <p className="eyebrow">{t("app.tagline")}</p>
-      <h1 id="page-title">{t(`nav.${pageKey}`)}</h1>
-      <p>{t("shell.comingSoon")}</p>
-    </section>
-  );
-}
-
 function AppShell() {
   const { t } = useTranslation();
   const location = useLocation();
@@ -137,6 +123,15 @@ function AppShell() {
             </NavLink>
           ))}
         </nav>
+        <div className="sidebar-footer">
+          <NavLink
+            className={({ isActive }) => (isActive ? "nav-link nav-link-active" : "nav-link")}
+            to="/settings/general"
+          >
+            <NavigationIcon name="settings" />
+            <span className="nav-label">{t("nav.settings")}</span>
+          </NavLink>
+        </div>
       </aside>
 
       <main className="main-content">
@@ -175,18 +170,6 @@ function AppShell() {
           <Route element={<SyncStatusPage />} path="/settings/sync" />
           <Route element={<SettingsPage />} path="/settings/general" />
           <Route element={<DataManagementPage />} path="/settings/data" />
-          {navigation
-            .filter(
-              (item) =>
-                !["today", "inbox", "board", "projects", "review", "settings"].includes(item.key),
-            )
-            .map((item) => (
-              <Route
-                element={<PlaceholderPage pageKey={item.key} />}
-                key={item.path}
-                path={item.path}
-              />
-            ))}
           <Route element={<Navigate replace to="/projects" />} path="*" />
         </Routes>
       </main>

@@ -4,6 +4,7 @@ import {
   type SyncSummary,
   type SyncTransport,
 } from "@nextone/sync-core";
+import type { SyncConflict } from "@nextone/storage-contracts";
 
 import { nextOneDatabase } from "../storage/indexedDb";
 import {
@@ -13,7 +14,11 @@ import {
   type SyncConfiguration,
 } from "./config";
 import { announceSyncedDataChanged, localMutationsPendingEvent } from "./dataChangeEvents";
-import { toLocalSnapshot, type ServerBootstrapSnapshot } from "./serverSnapshot";
+import {
+  canReplaceWithServerSnapshot,
+  toLocalSnapshot,
+  type ServerBootstrapSnapshot,
+} from "./serverSnapshot";
 const syncChangedEvent = "nextone:sync-changed";
 export { getSyncConfiguration, saveSyncConfiguration, type SyncConfiguration };
 
@@ -50,6 +55,7 @@ const transport: SyncTransport = {
 };
 
 const engine = new SyncEngine(nextOneDatabase, transport, getDeviceId());
+let runningSync: Promise<SyncSummary> | undefined;
 
 function announceChange(): void {
   window.dispatchEvent(new Event(syncChangedEvent));
@@ -59,10 +65,24 @@ export function getSyncSummary(): Promise<SyncSummary> {
   return engine.summary();
 }
 
-export async function syncNow(): Promise<SyncSummary> {
+export async function listSyncConflicts(): Promise<readonly SyncConflict[]> {
+  const conflicts = await nextOneDatabase.transaction((transaction) =>
+    transaction.syncConflicts.listOpen(),
+  );
+  return [
+    ...new Map(
+      conflicts.map((conflict) => [
+        `${conflict.entityType}:${conflict.entityId}`,
+        conflict,
+      ]),
+    ).values(),
+  ];
+}
+
+async function runSync(): Promise<SyncSummary> {
   announceChange();
   let summary = await engine.syncNow();
-  if (summary.state.status === "UP_TO_DATE" && summary.pendingCount === 0) {
+  if (canReplaceWithServerSnapshot(summary)) {
     const synchronizedAt = new Date().toISOString();
     try {
       const bootstrap = await apiRequest<ServerBootstrapSnapshot>("/api/v1/bootstrap");
@@ -89,6 +109,13 @@ export async function syncNow(): Promise<SyncSummary> {
   return summary;
 }
 
+export function syncNow(): Promise<SyncSummary> {
+  runningSync ??= runSync().finally(() => {
+    runningSync = undefined;
+  });
+  return runningSync;
+}
+
 export function subscribeToSyncChanges(listener: () => void): () => void {
   window.addEventListener(syncChangedEvent, listener);
   return () => window.removeEventListener(syncChangedEvent, listener);
@@ -98,12 +125,9 @@ export async function resolveSyncConflict(
   conflictId: string,
   resolution: ConflictResolution,
 ): Promise<SyncSummary> {
-  const summary = await engine.resolveConflict(conflictId, resolution);
+  await engine.resolveConflict(conflictId, resolution);
   announceChange();
-  if (resolution === "KEEP_LOCAL") {
-    return syncNow();
-  }
-  return summary;
+  return syncNow();
 }
 
 export function startAutomaticSync(): () => void {

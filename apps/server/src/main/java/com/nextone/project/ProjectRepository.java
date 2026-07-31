@@ -22,16 +22,15 @@ public class ProjectRepository {
     public void insert(ProjectView project) {
         jdbcTemplate.update("""
                 INSERT INTO project (
-                    id, user_id, name, note, status, focus_task_id,
+                    id, user_id, name, note, status,
                     sort_key, created_at, updated_at, revision
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 project.id(),
                 project.userId(),
                 project.name(),
                 project.note(),
                 project.status().name(),
-                project.focusTaskId(),
                 project.sortKey(),
                 project.createdAt(),
                 project.updatedAt(),
@@ -41,7 +40,7 @@ public class ProjectRepository {
 
     public List<ProjectView> list(String userId) {
         return jdbcTemplate.query("""
-                SELECT id, user_id, name, note, status, focus_task_id,
+                SELECT id, user_id, name, note, status,
                        sort_key, created_at, updated_at, revision
                 FROM project
                 WHERE user_id = ? AND deleted_at IS NULL
@@ -51,7 +50,7 @@ public class ProjectRepository {
 
     public Optional<ProjectView> findById(String userId, String projectId) {
         return jdbcTemplate.query("""
-                SELECT id, user_id, name, note, status, focus_task_id,
+                SELECT id, user_id, name, note, status,
                        sort_key, created_at, updated_at, revision
                 FROM project
                 WHERE user_id = ? AND id = ? AND deleted_at IS NULL
@@ -64,7 +63,6 @@ public class ProjectRepository {
                     name = ?,
                     note = ?,
                     status = ?,
-                    focus_task_id = ?,
                     updated_at = ?,
                     revision = ?
                 WHERE user_id = ? AND id = ? AND revision = ? AND deleted_at IS NULL
@@ -72,7 +70,6 @@ public class ProjectRepository {
                 project.name(),
                 project.note(),
                 project.status().name(),
-                project.focusTaskId(),
                 project.updatedAt(),
                 project.revision(),
                 project.userId(),
@@ -91,7 +88,6 @@ public class ProjectRepository {
                 resultSet.getString("name"),
                 resultSet.getString("note"),
                 ProjectStatus.valueOf(resultSet.getString("status")),
-                resultSet.getString("focus_task_id"),
                 resultSet.getString("sort_key"),
                 resultSet.getObject("created_at", OffsetDateTime.class),
                 resultSet.getObject("updated_at", OffsetDateTime.class),

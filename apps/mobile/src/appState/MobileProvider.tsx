@@ -21,8 +21,7 @@ import { MobileSyncService } from "@/sync/syncService";
 
 interface MobileData {
   inbox: readonly Task[];
-  focus: readonly Task[];
-  later: readonly Task[];
+  planned: readonly Task[];
   doing: readonly Task[];
   ready: readonly Task[];
 }
@@ -44,8 +43,7 @@ interface MobileContextValue extends MobileData {
 
 const emptyData: MobileData = {
   inbox: [],
-  focus: [],
-  later: [],
+  planned: [],
   doing: [],
   ready: [],
 };
@@ -74,8 +72,7 @@ export function MobileProvider({ children }: PropsWithChildren) {
       const summary = await syncService.summary();
       setData({
         inbox,
-        focus: today.focus.map(({ task }) => task),
-        later: today.later.map(({ task }) => task),
+        planned: today.planned.map(({ task }) => task),
         doing: today.doing,
         ready: board.filter((task) => task.status === "READY"),
       });
@@ -169,7 +166,13 @@ export function MobileProvider({ children }: PropsWithChildren) {
           setLoading(false);
         }
       },
-      transition: (task, status) => runLocalAction(() => taskService.transition(task.id, status)),
+      transition: (task, status) =>
+        runLocalAction(async () => {
+          await taskService.transition(task.id, status);
+          if (status === "WAITING") {
+            await taskService.removeFromToday(task.id, currentLocalDate());
+          }
+        }),
       addToToday: (task) =>
         runLocalAction(() =>
           taskService.addToToday(task.id, currentLocalDate(), currentTimeZone()),

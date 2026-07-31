@@ -2,6 +2,7 @@ import {
   ProjectApplicationService,
   ReviewApplicationService,
   TaskApplicationService,
+  WorkPackageApplicationService,
 } from "@nextone/application";
 
 import { nextOneDatabase } from "../storage/indexedDb";
@@ -21,6 +22,9 @@ const applicationDependencies = {
 
 export const taskApplicationService = new TaskApplicationService(applicationDependencies);
 export const projectApplicationService = new ProjectApplicationService(applicationDependencies);
+export const workPackageApplicationService = new WorkPackageApplicationService(
+  applicationDependencies,
+);
 export const reviewApplicationService = new ReviewApplicationService(applicationDependencies);
 
 export function notifyTasksChanged(): void {

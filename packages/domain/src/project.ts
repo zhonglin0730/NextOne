@@ -7,7 +7,6 @@ export interface Project {
   name: string;
   note?: string;
   status: ProjectStatus;
-  focusTaskId?: string;
   sortKey: string;
   createdAt: string;
   updatedAt: string;

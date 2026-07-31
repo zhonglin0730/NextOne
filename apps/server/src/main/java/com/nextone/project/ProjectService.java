@@ -1,11 +1,10 @@
 package com.nextone.project;
 
 import com.nextone.common.ApiException;
-import com.nextone.event.TaskEventRepository;
 import com.nextone.task.TaskRepository;
-import com.nextone.task.TaskKind;
-import com.nextone.task.TaskStatus;
 import com.nextone.task.TaskView;
+import com.nextone.workpackage.WorkPackageRepository;
+import com.nextone.workpackage.WorkPackageView;
 import java.time.Clock;
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -20,18 +19,18 @@ public class ProjectService {
 
     private final ProjectRepository repository;
     private final TaskRepository tasks;
-    private final TaskEventRepository events;
+    private final WorkPackageRepository workPackages;
     private final Clock clock;
 
     public ProjectService(
             ProjectRepository repository,
             TaskRepository tasks,
-            TaskEventRepository events,
+            WorkPackageRepository workPackages,
             Clock clock
     ) {
         this.repository = repository;
         this.tasks = tasks;
-        this.events = events;
+        this.workPackages = workPackages;
         this.clock = clock;
     }
 
@@ -45,7 +44,6 @@ public class ProjectService {
                 requireName(name),
                 trimToNull(note),
                 ProjectStatus.ACTIVE,
-                null,
                 now + ":" + id,
                 now,
                 now,
@@ -61,7 +59,11 @@ public class ProjectService {
 
     public ProjectDetail get(String userId, String projectId) {
         ProjectView project = requireProject(userId, projectId);
-        return new ProjectDetail(project, tasks.listByProject(userId, projectId));
+        return new ProjectDetail(
+                project,
+                tasks.listByProject(userId, projectId),
+                workPackages.listByProject(userId, projectId)
+        );
     }
 
     @Transactional
@@ -82,62 +84,12 @@ public class ProjectService {
                 requireName(name),
                 trimToNull(note),
                 status,
-                status == ProjectStatus.ACTIVE ? current.focusTaskId() : null,
                 current.sortKey(),
                 current.createdAt(),
                 now,
                 current.revision() + 1
         );
         repository.update(updated);
-        return updated;
-    }
-
-    @Transactional
-    public ProjectView setFocus(String userId, String projectId, String taskId) {
-        ProjectView project = requireProject(userId, projectId);
-        if (project.status() != ProjectStatus.ACTIVE) {
-            throw new ApiException(HttpStatus.CONFLICT, "PROJECT_NOT_ACTIVE");
-        }
-        TaskView nextFocus = null;
-        if (taskId != null) {
-            nextFocus = tasks.findById(userId, taskId)
-                    .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "TASK_NOT_FOUND"));
-            if (!projectId.equals(nextFocus.projectId())
-                    || nextFocus.kind() != TaskKind.ACTION
-                    || nextFocus.status() == TaskStatus.INBOX
-                    || nextFocus.status().terminal()) {
-                throw new ApiException(HttpStatus.CONFLICT, "PROJECT_FOCUS_TASK_INVALID");
-            }
-        }
-        if ((project.focusTaskId() == null && taskId == null)
-                || (project.focusTaskId() != null && project.focusTaskId().equals(taskId))) {
-            return project;
-        }
-
-        OffsetDateTime now = OffsetDateTime.now(clock);
-        ProjectView updated = new ProjectView(
-                project.id(),
-                project.userId(),
-                project.name(),
-                project.note(),
-                project.status(),
-                taskId,
-                project.sortKey(),
-                project.createdAt(),
-                now,
-                project.revision() + 1
-        );
-        repository.update(updated);
-        if (project.focusTaskId() != null) {
-            events.append(userId, project.focusTaskId(), "PROJECT_FOCUS_CLEARED", Map.of(
-                    "projectId", projectId
-            ), now);
-        }
-        if (nextFocus != null) {
-            events.append(userId, nextFocus.id(), "PROJECT_FOCUS_SET", Map.of(
-                    "projectId", projectId
-            ), now);
-        }
         return updated;
     }
 
@@ -167,6 +119,10 @@ public class ProjectService {
         return value == null || value.trim().isEmpty() ? null : value.trim();
     }
 
-    public record ProjectDetail(ProjectView project, List<TaskView> tasks) {
+    public record ProjectDetail(
+            ProjectView project,
+            List<TaskView> tasks,
+            List<WorkPackageView> workPackages
+    ) {
     }
 }

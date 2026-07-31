@@ -1,6 +1,7 @@
 import { WipLimitExceededError } from "@nextone/application";
 import type { Task, TaskStatus } from "@nextone/domain";
 
+import { getLocalDate } from "../today/date";
 import { notifyTasksChanged, taskApplicationService } from "./taskService";
 
 export async function transitionWithWipConfirmation(
@@ -11,6 +12,9 @@ export async function transitionWithWipConfirmation(
 ): Promise<Task | undefined> {
   try {
     const task = await taskApplicationService.transition(taskId, status);
+    if (status === "WAITING") {
+      await taskApplicationService.removeFromToday(taskId, getLocalDate());
+    }
     if (notify) {
       notifyTasksChanged();
     }
