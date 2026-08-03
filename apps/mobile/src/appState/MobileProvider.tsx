@@ -38,7 +38,7 @@ interface MobileContextValue extends MobileData {
   removeFromToday(task: Task): Promise<void>;
   syncNow(): Promise<void>;
   credentials(): Promise<MobileSyncCredentials>;
-  saveCredentials(credentials: MobileSyncCredentials): Promise<void>;
+  saveCredentials(credentials: MobileSyncCredentials): Promise<SyncSummary>;
 }
 
 const emptyData: MobileData = {
@@ -135,7 +135,10 @@ export function MobileProvider({ children }: PropsWithChildren) {
   const updateCredentials = useCallback(
     async (credentials: MobileSyncCredentials) => {
       await syncService.saveCredentials(credentials);
+      const summary = await syncService.syncNow();
+      setSync(summary);
       await refresh();
+      return summary;
     },
     [refresh],
   );

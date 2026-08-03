@@ -22,6 +22,33 @@ export function normalizeApiUrl(value: string): string {
   return normalized;
 }
 
+export function resolveDefaultApiUrl(input: {
+  configured?: string;
+  developmentHost?: string | null;
+  platform: string;
+}): string {
+  if (input.configured !== undefined && input.configured.trim().length > 0) {
+    return normalizeApiUrl(input.configured);
+  }
+
+  if (input.developmentHost !== undefined && input.developmentHost !== null) {
+    try {
+      const value = input.developmentHost.includes("://")
+        ? input.developmentHost
+        : `http://${input.developmentHost}`;
+      const hostname = new URL(value).hostname;
+      if (hostname !== "localhost" && hostname !== "127.0.0.1" && hostname !== "::1") {
+        const host = hostname.includes(":") ? `[${hostname}]` : hostname;
+        return `http://${host}:8080`;
+      }
+    } catch {
+      // Fall back to the platform-specific local development address.
+    }
+  }
+
+  return input.platform === "android" ? "http://10.0.2.2:8080" : "http://127.0.0.1:8080";
+}
+
 export async function loadStoredSyncCredentials(
   storage: CredentialStorage,
   defaults: { apiUrl: string; token: string; createDeviceId: () => string },

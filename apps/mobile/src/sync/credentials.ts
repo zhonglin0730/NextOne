@@ -1,10 +1,12 @@
 import { randomUUID } from "expo-crypto";
+import Constants from "expo-constants";
 import * as SecureStore from "expo-secure-store";
 import { Platform } from "react-native";
 
 import {
   loadStoredSyncCredentials,
   normalizeApiUrl,
+  resolveDefaultApiUrl,
   saveStoredSyncCredentials,
   type CredentialStorage,
   type MobileSyncCredentials,
@@ -25,11 +27,11 @@ const secureCredentialStorage: CredentialStorage = {
 };
 
 function defaultApiUrl(): string {
-  const configured = process.env.EXPO_PUBLIC_API_URL;
-  if (configured !== undefined && configured.trim().length > 0) {
-    return normalizeApiUrl(configured);
-  }
-  return Platform.OS === "android" ? "http://10.0.2.2:8080" : "http://127.0.0.1:8080";
+  return resolveDefaultApiUrl({
+    configured: process.env.EXPO_PUBLIC_API_URL,
+    developmentHost: Constants.expoConfig?.hostUri,
+    platform: Platform.OS,
+  });
 }
 
 export async function loadSyncCredentials(

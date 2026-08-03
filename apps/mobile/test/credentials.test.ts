@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   loadStoredSyncCredentials,
   normalizeApiUrl,
+  resolveDefaultApiUrl,
   saveStoredSyncCredentials,
   type CredentialStorage,
 } from "../src/sync/credentialModel";
@@ -21,6 +22,31 @@ describe("mobile sync credentials", () => {
   it("normalizes the server URL", () => {
     expect(normalizeApiUrl(" https://nextone.example.com/// ")).toBe("https://nextone.example.com");
     expect(() => normalizeApiUrl("ftp://nextone.example.com")).toThrow();
+  });
+
+  it("uses the Expo development host for a physical Android device", () => {
+    expect(
+      resolveDefaultApiUrl({
+        developmentHost: "10.70.10.123:8081",
+        platform: "android",
+      }),
+    ).toBe("http://10.70.10.123:8080");
+    expect(
+      resolveDefaultApiUrl({
+        developmentHost: "127.0.0.1:8081",
+        platform: "android",
+      }),
+    ).toBe("http://10.0.2.2:8080");
+  });
+
+  it("prefers an explicitly configured API URL", () => {
+    expect(
+      resolveDefaultApiUrl({
+        configured: " https://nextone.example.com/ ",
+        developmentHost: "10.70.10.123:8081",
+        platform: "android",
+      }),
+    ).toBe("https://nextone.example.com");
   });
 
   it("persists and reloads token, endpoint, and device identity", async () => {

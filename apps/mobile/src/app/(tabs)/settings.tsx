@@ -10,6 +10,7 @@ export default function SettingsPage() {
   const [apiUrl, setApiUrl] = useState("");
   const [token, setToken] = useState("");
   const [deviceId, setDeviceId] = useState("");
+  const [tokenVisible, setTokenVisible] = useState(false);
 
   useEffect(() => {
     void credentials().then((value) => {
@@ -21,8 +22,13 @@ export default function SettingsPage() {
 
   const save = async () => {
     try {
-      await saveCredentials({ apiUrl, token, deviceId });
-      Alert.alert("已保存", "凭据已写入系统安全存储。");
+      const summary = await saveCredentials({ apiUrl, token, deviceId });
+      Alert.alert(
+        summary.state.status === "UP_TO_DATE" ? "连接成功" : "设置已保存",
+        summary.state.status === "UP_TO_DATE"
+          ? "凭据已安全保存，数据同步正常。"
+          : "凭据已安全保存；当前未能连接服务器，本地功能仍可继续使用。",
+      );
     } catch (cause) {
       Alert.alert("保存失败", cause instanceof Error ? cause.message : String(cause));
     }
@@ -63,17 +69,28 @@ export default function SettingsPage() {
           value={apiUrl}
         />
         <Text style={styles.label}>访问令牌</Text>
-        <TextInput
-          autoCapitalize="none"
-          autoCorrect={false}
-          onChangeText={setToken}
-          secureTextEntry
-          style={styles.input}
-          value={token}
-        />
+        <View style={styles.secretField}>
+          <TextInput
+            accessibilityLabel="访问令牌"
+            autoCapitalize="none"
+            autoCorrect={false}
+            onChangeText={setToken}
+            secureTextEntry={!tokenVisible}
+            style={styles.secretInput}
+            value={token}
+          />
+          <Pressable
+            accessibilityLabel={tokenVisible ? "隐藏访问令牌" : "显示访问令牌"}
+            accessibilityRole="button"
+            onPress={() => setTokenVisible((visible) => !visible)}
+            style={styles.secretToggle}
+          >
+            <Text style={styles.secretToggleText}>{tokenVisible ? "隐藏" : "显示"}</Text>
+          </Pressable>
+        </View>
         <Text style={styles.device}>设备 ID：{deviceId || "生成中…"}</Text>
         <Pressable disabled={loading} onPress={() => void save()} style={styles.primaryButton}>
-          <Text style={styles.primaryButtonText}>安全保存</Text>
+          <Text style={styles.primaryButtonText}>保存并测试连接</Text>
         </Pressable>
       </View>
 
@@ -147,6 +164,31 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     color: colors.ink,
     backgroundColor: "#ffffff",
+  },
+  secretField: {
+    flexDirection: "row",
+    alignItems: "center",
+    minHeight: 48,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 12,
+    backgroundColor: colors.surface,
+  },
+  secretInput: {
+    flex: 1,
+    minHeight: 46,
+    paddingHorizontal: spacing.md,
+    color: colors.ink,
+  },
+  secretToggle: {
+    minWidth: 56,
+    minHeight: 44,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  secretToggleText: {
+    color: colors.primary,
+    fontWeight: "700",
   },
   device: {
     color: colors.muted,
