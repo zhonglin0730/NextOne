@@ -82,6 +82,16 @@ class NextOnePostgresIntegrationTest {
         );
         assertThat(openApi.statusCode()).isEqualTo(200);
         assertThat(openApi.body()).contains("openapi: 3.1.0");
+
+        HttpResponse<String> missingRoute = send(
+                "GET",
+                "/api/v1/does-not-exist",
+                null,
+                "test-access-token"
+        );
+        assertThat(missingRoute.statusCode()).isEqualTo(404);
+        assertThat(jsonMapper.readTree(missingRoute.body()).get("code").asString())
+                .isEqualTo("API_ROUTE_NOT_FOUND");
     }
 
     @Test
