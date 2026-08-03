@@ -20,7 +20,10 @@
     "server:run": "mvn -pl apps/server spring-boot:run",
     "server:test": "mvn -pl apps/server test",
     "db:up": "docker compose -f deploy/compose/compose.dev.yml up -d",
-    "db:down": "docker compose -f deploy/compose/compose.dev.yml down"
+    "db:down": "docker compose -f deploy/compose/compose.dev.yml down",
+    "prod:config": "docker compose --env-file deploy/compose/.env.production -f deploy/compose/compose.prod.yml config",
+    "prod:up": "docker compose --env-file deploy/compose/.env.production -f deploy/compose/compose.prod.yml up -d --build",
+    "prod:backup": "docker compose --env-file deploy/compose/.env.production -f deploy/compose/compose.prod.yml --profile maintenance run --rm backup"
   },
   "devDependencies": {
     "@playwright/test": "1.62.1",

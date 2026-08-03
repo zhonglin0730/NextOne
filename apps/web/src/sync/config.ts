@@ -7,10 +7,23 @@ export interface SyncConfiguration {
   token: string;
 }
 
+function defaultApiUrl(): string {
+  const configured = import.meta.env.VITE_NEXTONE_API_URL?.trim();
+  if (configured) {
+    return configured.replace(/\/+$/, "");
+  }
+
+  if (import.meta.env.DEV) {
+    return `${window.location.protocol}//${window.location.hostname}:8080`;
+  }
+
+  return window.location.origin;
+}
+
 export function getSyncConfiguration(): SyncConfiguration {
   return {
-    apiUrl: localStorage.getItem(apiUrlKey) ?? "http://127.0.0.1:8080",
-    token: localStorage.getItem(tokenKey) ?? "nextone-local-dev-token",
+    apiUrl: localStorage.getItem(apiUrlKey) ?? defaultApiUrl(),
+    token: localStorage.getItem(tokenKey) ?? (import.meta.env.DEV ? "nextone-local-dev-token" : ""),
   };
 }
 

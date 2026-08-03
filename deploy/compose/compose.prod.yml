@@ -1,0 +1,117 @@
+name: nextone
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-nextone}
+      POSTGRES_USER: ${POSTGRES_USER:-nextone}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - backend
+
+  server:
+    build:
+      context: ../..
+      dockerfile: apps/server/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NEXTONE_DATABASE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-nextone}
+      NEXTONE_DATABASE_USER: ${POSTGRES_USER:-nextone}
+      NEXTONE_DATABASE_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      NEXTONE_ACCESS_TOKEN: ${NEXTONE_ACCESS_TOKEN:?NEXTONE_ACCESS_TOKEN is required}
+      NEXTONE_USER_ID: ${NEXTONE_USER_ID:-nextone-owner}
+      NEXTONE_USER_NAME: ${NEXTONE_USER_NAME:-NextOne Owner}
+      NEXTONE_USER_LOCALE: ${NEXTONE_USER_LOCALE:-zh-CN}
+      NEXTONE_USER_TIME_ZONE: ${NEXTONE_USER_TIME_ZONE:-Asia/Shanghai}
+      NEXTONE_CORS_ALLOWED_ORIGINS: https://${NEXTONE_DOMAIN:?NEXTONE_DOMAIN is required}
+      NEXTONE_BOOTSTRAP_ENABLED: "true"
+      LOGGING_STRUCTURED_FORMAT_CONSOLE: logstash
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:8080/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      - backend
+
+  web:
+    build:
+      context: ../..
+      dockerfile: apps/web/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      server:
+        condition: service_healthy
+    environment:
+      NEXTONE_DOMAIN: ${NEXTONE_DOMAIN:?NEXTONE_DOMAIN is required}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - backend
+      - public
+
+  backup:
+    image: postgres:17-alpine
+    profiles: ["maintenance"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGHOST: postgres
+      PGDATABASE: ${POSTGRES_DB:-nextone}
+      PGUSER: ${POSTGRES_USER:-nextone}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-14}
+    entrypoint: ["sh", "/scripts/backup-postgres.sh"]
+    volumes:
+      - ../scripts:/scripts:ro
+      - ../../backups:/backups
+    networks:
+      - backend
+
+  restore:
+    image: postgres:17-alpine
+    profiles: ["maintenance"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGHOST: postgres
+      PGDATABASE: ${POSTGRES_DB:-nextone}
+      PGUSER: ${POSTGRES_USER:-nextone}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      RESTORE_FILE: ${RESTORE_FILE:-}
+    entrypoint: ["sh", "/scripts/restore-postgres.sh"]
+    volumes:
+      - ../scripts:/scripts:ro
+      - ../../backups:/backups:ro
+    networks:
+      - backend
+
+volumes:
+  postgres_data:
+  caddy_data:
+  caddy_config:
+
+networks:
+  backend:
+    internal: true
+  public:

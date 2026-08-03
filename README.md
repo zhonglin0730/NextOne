@@ -68,6 +68,8 @@ pnpm server:run
 `http://127.0.0.1:8080/openapi/nextone-v1.yaml`。
 
 环境变量参考 `deploy/compose/.env.example` 和 `apps/server/src/main/resources/application.yml`。
+Oracle ARM 生产部署、备份和恢复步骤见
+[`docs/M10-Oracle-ARM-部署与恢复.md`](docs/M10-Oracle-ARM-部署与恢复.md)。
 
 ## 当前边界
 
@@ -77,5 +79,7 @@ pnpm server:run
 - 清除本地副本不会删除云端数据，账户删除申请也不会在浏览器中直接执行最终删除；
 - M8 已提供不依赖 WebView 的 Android 原生界面、SQLite Outbox、前台/网络恢复同步和安全凭据；
 - M9 已提供晨间规划、每日容量反馈和 Zen 单任务模式；
-- 标准 OIDC 认证和 Oracle 部署将在后续 M10 实现；
+- M10 的 ARM64 镜像、生产 Compose、Caddy HTTPS、备份恢复和最小监控配置已就绪，等待
+  Oracle ARM 主机与域名完成真实部署验收；
+- 当前个人版使用单用户长令牌认证，标准 OIDC 属于后续账户体系增强；
 - 不依赖 Supabase、Redis、消息队列或付费 SaaS。

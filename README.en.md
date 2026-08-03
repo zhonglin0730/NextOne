@@ -80,6 +80,8 @@ file is served at `http://127.0.0.1:8080/openapi/nextone-v1.yaml`.
 
 For environment variable examples, see `deploy/compose/.env.example` and
 `apps/server/src/main/resources/application.yml`.
+For Oracle ARM production deployment, backup, and recovery, see
+[`docs/M10-Oracle-ARM-部署与恢复.md`](docs/M10-Oracle-ARM-部署与恢复.md).
 
 ## Current Scope
 
@@ -95,6 +97,10 @@ For environment variable examples, see `deploy/compose/.env.example` and
 - M8 adds native Android screens without WebView, a SQLite Outbox, foreground
   and network-recovery sync, and secure local credentials.
 - M9 adds morning planning, daily capacity feedback, and Zen single-task mode.
-- Standard OIDC authentication and Oracle deployment are planned for M10.
+- M10 now includes ARM64 images, production Compose, Caddy HTTPS, backup and
+  restore, and minimal monitoring configuration. Real deployment validation is
+  waiting for the Oracle ARM host and domain.
+- The personal edition currently uses a single-user long token. Standard OIDC
+  remains a later account-system enhancement.
 - The system does not depend on Supabase, Redis, message queues, or paid SaaS
   products.
