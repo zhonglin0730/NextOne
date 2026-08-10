@@ -1,10 +1,17 @@
 import { type ReactNode, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { BrowserRouter, Navigate, NavLink, Route, Routes, useLocation } from "react-router";
+import {
+  BrowserRouter,
+  Navigate,
+  NavLink,
+  Route,
+  Routes,
+  useLocation,
+  useParams,
+} from "react-router";
 
 import { BoardPage } from "./board/BoardPage";
 import { BrandLogo } from "./brand/BrandLogo";
-import { ProjectDetailPage } from "./projects/ProjectDetailPage";
 import { ProjectStructurePage } from "./projects/ProjectStructurePage";
 import { ProjectsPage } from "./projects/ProjectsPage";
 import { DailyClosePage } from "./review/DailyClosePage";
@@ -162,9 +169,9 @@ function AppShell() {
           <Route element={<TodayPage />} path="/today" />
           <Route element={<BoardPage />} path="/board" />
           <Route element={<ProjectsPage />} path="/projects" />
-          <Route element={<ProjectDetailPage />} path="/projects/:projectId" />
+          <Route element={<BoardPage />} path="/projects/:projectId" />
           <Route element={<ProjectStructurePage />} path="/projects/:projectId/structure" />
-          <Route element={<BoardPage />} path="/projects/:projectId/board" />
+          <Route element={<ProjectBoardRedirect />} path="/projects/:projectId/board" />
           <Route element={<ReviewCenterPage />} path="/review" />
           <Route element={<DailyClosePage />} path="/review/daily" />
           <Route element={<SyncStatusPage />} path="/settings/sync" />
@@ -184,6 +191,11 @@ function AppShell() {
       />
     </div>
   );
+}
+
+function ProjectBoardRedirect() {
+  const { projectId } = useParams();
+  return <Navigate replace to={projectId === undefined ? "/projects" : `/projects/${projectId}`} />;
 }
 
 export function App() {

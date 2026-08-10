@@ -80,9 +80,6 @@ export function InboxPage({ onOpenCapture }: InboxPageProps) {
           </span>
           <h2>{t("inbox.emptyTitle")}</h2>
           <p>{t("inbox.emptyDescription")}</p>
-          <button className="button button-primary" onClick={onOpenCapture} type="button">
-            {t("inbox.emptyAction")}
-          </button>
         </div>
       ) : (
         <div className="task-list">

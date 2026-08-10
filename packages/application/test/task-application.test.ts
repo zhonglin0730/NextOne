@@ -405,6 +405,30 @@ describe("task application service", () => {
     expect(state.events.map((event) => event.type)).toContain("ADDED_TO_DAILY_PLAN");
   });
 
+  it("starts a task and adds it to today in one application operation", async () => {
+    const state = createMemoryDatabase();
+    let transactionCount = 0;
+    const countingDatabase: LocalDatabase = {
+      transaction: async <T>(work: (transaction: StorageTransaction) => Promise<T>) => {
+        transactionCount += 1;
+        return state.database.transaction(work);
+      },
+    };
+    const service = createService(countingDatabase);
+    const task = await service.capture({ title: "Start the release checklist" });
+    await service.transition(task.id, "READY");
+    transactionCount = 0;
+
+    const started = await service.startTaskForToday(task.id, "2026-07-24", "Asia/Shanghai");
+    expect(transactionCount).toBe(1);
+    const today = await service.getToday("2026-07-24");
+
+    expect(started.status).toBe("DOING");
+    expect(state.tasks.get(task.id)?.status).toBe("DOING");
+    expect(today.planned.map((entry) => entry.task.id)).toEqual([task.id]);
+    expect(today.doing.map((candidate) => candidate.id)).toEqual([task.id]);
+  });
+
   it("keeps waiting tasks out of today's actionable plan", async () => {
     const state = createMemoryDatabase();
     const service = createService(state.database);
@@ -728,7 +752,9 @@ describe("task application service", () => {
     expect(state.projects.get(target.id)).not.toHaveProperty("focusTaskId");
 
     const targetDetail = await projects.getDetail(target.id, "2026-07-20T00:00:00.000Z");
-    expect(targetDetail?.recentActivity.map(({ event }) => event.type)).toEqual(["PROJECT_CHANGED"]);
+    expect(targetDetail?.recentActivity.map(({ event }) => event.type)).toEqual([
+      "PROJECT_CHANGED",
+    ]);
   });
 
   it("derives the next ready task after the current action is completed", async () => {

@@ -1,5 +1,4 @@
 import type { ProjectOverview } from "@nextone/application";
-import type { Task } from "@nextone/domain";
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, useNavigate } from "react-router";
@@ -10,12 +9,11 @@ import {
   taskApplicationService,
   tasksChangedEvent,
 } from "../tasks/taskService";
-import { transitionWithWipConfirmation } from "../tasks/taskActions";
 import { getWeekStartsAt } from "../today/date";
 import { ProjectPortfolioOverview } from "./ProjectPortfolioOverview";
 
 export function ProjectsPage() {
-  const { i18n, t } = useTranslation();
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const weekStartsAt = useMemo(() => getWeekStartsAt(), []);
   const [projects, setProjects] = useState<readonly ProjectOverview[]>([]);
@@ -24,7 +22,6 @@ export function ProjectsPage() {
   const [name, setName] = useState("");
   const [note, setNote] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [startingTaskId, setStartingTaskId] = useState<string>();
   const [error, setError] = useState("");
   const [showWorkflowGuide, setShowWorkflowGuide] = useState(
     () => window.localStorage.getItem("nextone.project-workflow.dismissed") !== "1",
@@ -92,42 +89,11 @@ export function ProjectsPage() {
     }
   };
 
-  const startTask = async (task: Task) => {
-    setStartingTaskId(task.id);
-    setError("");
-    try {
-      await transitionWithWipConfirmation(task.id, "DOING", (limit) =>
-        window.confirm(`${t("wip.title", { limit })}\n\n${t("wip.confirm")}`),
-      );
-    } catch {
-      setError(t("common.error"));
-    } finally {
-      setStartingTaskId(undefined);
-    }
-  };
-
   const dismissWorkflowGuide = () => {
     window.localStorage.setItem("nextone.project-workflow.dismissed", "1");
     setShowWorkflowGuide(false);
   };
 
-  const formatter = new Intl.DateTimeFormat(i18n.resolvedLanguage ?? "zh-CN", {
-    dateStyle: "medium",
-  });
-  const doingProjects = projects.filter(({ doingTasks }) => doingTasks.length > 0);
-  const readyProjects =
-    doingProjects.length === 0
-      ? projects.filter(({ nextReadyTask }) => nextReadyTask !== undefined)
-      : [];
-  const overviewProjects =
-    doingProjects.length > 1 ? doingProjects : readyProjects.length > 1 ? readyProjects : [];
-  const overviewMode = doingProjects.length > 1 ? "doing" : "ready";
-  const suggestedProject =
-    doingProjects.length === 0 && readyProjects.length <= 1
-      ? (readyProjects[0] ?? (projects.length === 1 ? projects[0] : undefined))
-      : undefined;
-  const singleDoingProject = doingProjects.length === 1 ? doingProjects[0] : undefined;
-  const spotlightProject = singleDoingProject ?? suggestedProject;
   const attentionProjects = projects.filter(({ needsFocusDecision }) => needsFocusDecision);
   const needsDecisionCount = attentionProjects.length;
 
@@ -160,7 +126,6 @@ export function ProjectsPage() {
             {(
               [
                 ["capture", "/inbox"],
-                ["project", "/projects"],
                 ["board", "/board"],
                 ["today", "/today"],
                 ["review", "/review"],
@@ -203,147 +168,6 @@ export function ProjectsPage() {
         </div>
       ) : (
         <>
-          {overviewProjects.length > 1 ? (
-            <section className="project-active-section" aria-labelledby="project-active-title">
-              <header>
-                <div>
-                  <p className="eyebrow">
-                    {t(
-                      overviewMode === "doing"
-                        ? "project.activeProjectsEyebrow"
-                        : "project.readyProjectsEyebrow",
-                    )}
-                  </p>
-                  <h2 id="project-active-title">
-                    {t(
-                      overviewMode === "doing"
-                        ? "project.activeProjectsTitle"
-                        : "project.readyProjectsTitle",
-                      { count: overviewProjects.length },
-                    )}
-                  </h2>
-                </div>
-                <p>
-                  {t(
-                    overviewMode === "doing"
-                      ? "project.activeProjectsDescription"
-                      : "project.readyProjectsDescription",
-                  )}
-                </p>
-              </header>
-              <div className="project-active-grid">
-                {overviewProjects.map((overview) => (
-                  <Link
-                    className="project-active-card"
-                    key={overview.project.id}
-                    to={`/projects/${overview.project.id}`}
-                  >
-                    <header>
-                      <strong>{overview.project.name}</strong>
-                      <span>{overview.progress.completedPercent}%</span>
-                    </header>
-                    <ul>
-                      {(overview.doingTasks.length > 0
-                        ? overview.doingTasks
-                        : overview.nextReadyTask === undefined
-                          ? []
-                          : [overview.nextReadyTask]
-                      ).map((task) => (
-                        <li key={task.id}>{task.title}</li>
-                      ))}
-                    </ul>
-                    <footer>
-                      <span>
-                        {overview.waitingCount > 0
-                          ? t("project.waitingSummary", { count: overview.waitingCount })
-                          : t("project.noWaiting")}
-                      </span>
-                      <strong>{t("project.continueProject")} →</strong>
-                    </footer>
-                  </Link>
-                ))}
-              </div>
-            </section>
-          ) : spotlightProject === undefined ? null : (
-            <section
-              className="project-cockpit-hero"
-              aria-labelledby="project-cockpit-primary-title"
-            >
-              <div className="project-cockpit-project">
-                <p className="eyebrow">
-                  {singleDoingProject === undefined
-                    ? t("project.suggestedProject")
-                    : t("project.activeProject")}
-                </p>
-                <h2 id="project-cockpit-primary-title">
-                  <Link to={`/projects/${spotlightProject.project.id}`}>
-                    {spotlightProject.project.name}
-                  </Link>
-                </h2>
-                <p>{spotlightProject.project.note ?? t("project.outcomeEmpty")}</p>
-                <span className="project-last-progress">
-                  {spotlightProject.lastProgressAt === undefined
-                    ? t("project.noProgress")
-                    : t("project.lastProgress", {
-                        date: formatter.format(new Date(spotlightProject.lastProgressAt)),
-                      })}
-                </span>
-              </div>
-
-              <div className="project-cockpit-next">
-                <span>
-                  {spotlightProject.doingTasks.length > 0
-                    ? t("project.doingSummary", { count: spotlightProject.doingTasks.length })
-                    : t("project.nextReadyTitle")}
-                </span>
-                {spotlightProject.doingTasks.length > 0 ? (
-                  <ul className="project-cockpit-task-list">
-                    {spotlightProject.doingTasks.map((task) => (
-                      <li key={task.id}>{task.title}</li>
-                    ))}
-                  </ul>
-                ) : (
-                  <strong>{spotlightProject.nextReadyTask?.title ?? t("project.noFocus")}</strong>
-                )}
-                <p>
-                  {spotlightProject.doingTasks.length > 0
-                    ? t("project.doingSummaryDescription")
-                    : spotlightProject.nextReadyTask === undefined
-                      ? t("project.noFocusGuidance")
-                      : t("project.nextReadyDescription")}
-                </p>
-                <div className="project-cockpit-actions">
-                  {spotlightProject.doingTasks.length > 0 ? (
-                    <Link
-                      className="button button-primary"
-                      to={`/projects/${spotlightProject.project.id}`}
-                    >
-                      {t("project.continueProject")}
-                    </Link>
-                  ) : spotlightProject.nextReadyTask === undefined ? (
-                    <Link
-                      className="button button-primary"
-                      to={`/projects/${spotlightProject.project.id}`}
-                    >
-                      {t("project.decideNext")}
-                    </Link>
-                  ) : (
-                    <button
-                      className="button button-primary"
-                      disabled={startingTaskId === spotlightProject.nextReadyTask.id}
-                      onClick={() => void startTask(spotlightProject.nextReadyTask!)}
-                      type="button"
-                    >
-                      {startingTaskId === spotlightProject.nextReadyTask.id
-                        ? t("common.saving")
-                        : t("project.startNext")}
-                    </button>
-                  )}
-                </div>
-              </div>
-            </section>
-          )}
-
           {needsDecisionCount > 0 ? (
             <section
               className="project-attention-section"

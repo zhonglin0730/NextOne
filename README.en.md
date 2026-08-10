@@ -6,8 +6,8 @@ NextOne is a personal project progression system: projects show the whole
 picture, work packages define structure, and task states drive execution.
 
 It is neither a traditional to-do list nor simply a smaller Trello. NextOne
-starts with the outcome a project should achieve. Its project cockpit makes
-progress, blockers, and current execution visible; the board organizes the
+starts with the outcome a project should achieve. Its project portfolio makes
+progress and blockers visible; each project board organizes the
 execution flow; Today holds a small set of daily commitments; and reviews keep
 projects aligned over time. WIP limits, no-actionable-work alerts, and waiting-item
 prompts still help users make trade-offs, but they serve project progression
@@ -15,8 +15,8 @@ rather than define the product as a task-decision tool.
 
 The repository now provides a complete personal project progression workflow
 for the web with offline sync, plus a native Expo / React Native client.
-Implemented capabilities include the project cockpit, visual execution
-progress, work-package breakdown, execution board, quick capture, Today, Inbox, morning
+Implemented capabilities include the project portfolio, visual execution
+progress, optional work-package breakdown, execution board, quick capture, Today, Inbox, lightweight Today
 planning, Daily Close, basic reviews, Zen single-task mode, IndexedDB / SQLite
 local storage, opportunistic automatic sync, and SecureStore credentials.
 Product and development documentation is available in `docs/`.
@@ -24,9 +24,10 @@ Product and development documentation is available in `docs/`.
 ## Core Workflow
 
 1. Create a project and state the outcome it should achieve.
-2. Break it into stages or deliverables with work packages, then define
-   executable tasks.
-3. Pull only a few project tasks into Today and keep work in progress limited.
+2. Create executable tasks on the project board. Add work packages only when
+   a larger project needs stage or deliverable grouping.
+3. Starting a task adds it to Today automatically; tasks can also be planned
+   into Today before they are started.
 4. Complete, pause, or mark work as waiting so progress and blockers stay true.
 5. Use Daily Close and periodic reviews to handle waiting, stalled, and
    no-actionable-work projects.
@@ -86,7 +87,7 @@ For Oracle ARM production deployment, backup, and recovery, see
 ## Current Scope
 
 - The web engineering baseline, local task kernel, Today page, execution board,
-  project cockpit, work-package structure, visual project progress, Daily Close,
+  project portfolio, optional work-package structure, visual project progress, Daily Close,
   and Basic Review are implemented.
 - M6 connects browser IndexedDB Outbox records to the server and adds sync
   status and conflict resolution at `/settings/sync`.
@@ -96,7 +97,7 @@ For Oracle ARM production deployment, backup, and recovery, see
   directly execute final account deletion.
 - M8 adds native Android screens without WebView, a SQLite Outbox, foreground
   and network-recovery sync, and secure local credentials.
-- M9 adds morning planning, daily capacity feedback, and Zen single-task mode.
+- M9 adds lightweight Today planning, daily capacity feedback, and Zen single-task mode.
 - M10 now includes ARM64 images, production Compose, Caddy HTTPS, backup and
   restore, and minimal monitoring configuration. Real deployment validation is
   waiting for the Oracle ARM host and domain.

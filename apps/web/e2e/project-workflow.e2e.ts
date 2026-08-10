@@ -21,6 +21,7 @@ async function createProject(page: Page): Promise<void> {
 
 test("project workflow stays connected from structure to board and today", async ({ page }) => {
   await createProject(page);
+  const projectUrl = page.url();
 
   await page.getByRole("button", { name: "添加项目任务" }).click();
   const captureDialog = page.getByRole("dialog", { name: "添加项目任务" });
@@ -28,7 +29,7 @@ test("project workflow stays connected from structure to board and today", async
   await captureDialog.getByRole("button", { name: "添加到项目" }).click();
 
   await expect(page.getByRole("button", { name: new RegExp(taskName) })).toBeVisible();
-  await page.getByRole("link", { name: "结构", exact: true }).click();
+  await page.getByRole("link", { name: "项目拆解", exact: true }).click();
 
   await page
     .getByRole("button", { name: /工作包/ })
@@ -46,17 +47,20 @@ test("project workflow stays connected from structure to board and today", async
     .first();
   await expect(packageCard.getByRole("button", { name: new RegExp(taskName) })).toBeVisible();
 
-  await page.getByRole("link", { name: "看板", exact: true }).click();
+  await page.getByRole("link", { name: "推进看板", exact: true }).click();
   const readyColumn = page.locator(".board-column-ready");
   let taskCard = readyColumn.locator(".board-card").filter({ hasText: taskName });
   await expect(taskCard).toBeVisible();
-  await taskCard.getByRole("button", { name: "加入今天" }).click();
-  await expect(taskCard.getByRole("button", { name: "已在今天" })).toBeDisabled();
-
   await taskCard.getByRole("button", { name: "开始", exact: true }).click();
   const doingColumn = page.locator(".board-column-doing");
   taskCard = doingColumn.locator(".board-card").filter({ hasText: taskName });
   await expect(taskCard).toBeVisible();
+
+  await page.goto("/today");
+  await expect(page.getByText(taskName, { exact: true })).toBeVisible();
+
+  await page.goto(projectUrl);
+  taskCard = page.locator(".board-column-doing .board-card").filter({ hasText: taskName });
   await taskCard.getByRole("button", { name: "完成", exact: true }).click();
 
   const completedColumn = page.locator(".board-column-completed");

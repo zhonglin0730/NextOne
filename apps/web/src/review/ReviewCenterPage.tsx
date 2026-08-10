@@ -32,17 +32,23 @@ export function ReviewCenterPage() {
   >([]);
   const [reviewDates, setReviewDates] = useState<Record<string, string>>({});
   const [selectedTask, setSelectedTask] = useState<Task>();
+  const [selectedTaskAction, setSelectedTaskAction] = useState<"WAITING">();
+  const [hasDailyCloseItems, setHasDailyCloseItems] = useState(false);
   const [error, setError] = useState("");
   const [feedback, setFeedback] = useState("");
 
   const load = useCallback(async () => {
     try {
-      const [center, log] = await Promise.all([
+      const [center, log, dailyClose] = await Promise.all([
         reviewApplicationService.getCenter(new Date().toISOString()),
         reviewApplicationService.getActivity(),
+        reviewApplicationService.getDailyClose(getLocalDate(), getTimeZone()),
       ]);
       setView(center);
       setActivity(log);
+      setHasDailyCloseItems(
+        dailyClose.completed.length + dailyClose.unfinished.length + dailyClose.canceled.length > 0,
+      );
       setError("");
     } catch {
       setError(t("common.error"));
@@ -56,6 +62,11 @@ export function ReviewCenterPage() {
   }, [load]);
 
   const transition = async (task: Task, status: TaskStatus) => {
+    if (status === "WAITING") {
+      setSelectedTaskAction("WAITING");
+      setSelectedTask(task);
+      return;
+    }
     if (status === "CANCELED" && !window.confirm(t("task.abandonConfirm"))) {
       return;
     }
@@ -76,13 +87,11 @@ export function ReviewCenterPage() {
       }
       if (updated !== undefined) {
         const feedbackKey =
-          status === "WAITING"
-            ? "review.feedback.waiting"
-            : status === "READY"
-              ? "review.feedback.resumed"
-              : status === "DOING"
-                ? "review.feedback.started"
-                : "review.feedback.canceled";
+          status === "READY"
+            ? "review.feedback.resumed"
+            : status === "DOING"
+              ? "review.feedback.started"
+              : "review.feedback.canceled";
         setFeedback(t(feedbackKey, { title: task.title }));
         notifyTasksChanged();
       }
@@ -113,13 +122,13 @@ export function ReviewCenterPage() {
     }
   };
 
-  const addToday = async (task: Task) => {
+  const addToday = async (task: Task, feedbackKey = "review.feedback.addedToday") => {
     try {
       setFeedback("");
       await taskApplicationService.addToToday(task.id, getLocalDate(), getTimeZone());
       await taskApplicationService.acknowledgeReview(task.id);
       notifyTasksChanged();
-      setFeedback(t("review.feedback.addedToday", { title: task.title }));
+      setFeedback(t(feedbackKey, { title: task.title }));
     } catch {
       setError(t("common.error"));
     }
@@ -158,6 +167,8 @@ export function ReviewCenterPage() {
     dateStyle: "medium",
     timeStyle: "short",
   });
+  const visibleReasons =
+    view === undefined ? [] : reasons.filter((reason) => view.counts[reason] > 0);
 
   return (
     <section className="page review-page" aria-labelledby="review-title">
@@ -167,35 +178,45 @@ export function ReviewCenterPage() {
           <h1 id="review-title">{t("review.title")}</h1>
           <p>{t("review.description")}</p>
         </div>
-        <Link className="button button-primary" to="/review/daily">
-          {t("dailyClose.open")}
-        </Link>
       </header>
 
       {error.length > 0 ? <p className="page-error">{error}</p> : null}
       <ActionToast message={feedback} onDismiss={() => setFeedback("")} />
 
-      <div className="review-summary-grid">
-        {reasons.map((reason) => (
-          <article className="review-summary-card" key={reason}>
-            <span>{t(`review.reason.${reason}`)}</span>
-            <strong>{view?.counts[reason] ?? 0}</strong>
-          </article>
-        ))}
-      </div>
+      {hasDailyCloseItems ? (
+        <section
+          className="review-section review-daily-close-entry"
+          aria-labelledby="daily-review-title"
+        >
+          <header>
+            <div>
+              <h2 id="daily-review-title">{t("dailyClose.title")}</h2>
+              <p>{t("dailyClose.description")}</p>
+            </div>
+          </header>
+          <Link className="button button-primary" to="/review/daily">
+            {t("dailyClose.open")}
+          </Link>
+        </section>
+      ) : null}
 
-      <section className="review-section">
-        <header>
-          <div>
+      {visibleReasons.length > 0 ? (
+        <div className="review-summary-grid">
+          {visibleReasons.map((reason) => (
+            <article className="review-summary-card" key={reason}>
+              <span>{t(`review.reason.${reason}`)}</span>
+              <strong>{view?.counts[reason]}</strong>
+            </article>
+          ))}
+        </div>
+      ) : null}
+
+      {view !== undefined && view.items.length > 0 ? (
+        <section className="review-section">
+          <header>
             <h2>{t("review.queue")}</h2>
-            <p>{t("review.queueDescription")}</p>
-          </div>
-          <span className="count-pill">{view?.items.length ?? 0}</span>
-        </header>
-
-        {view === undefined || view.items.length === 0 ? (
-          <p className="inline-empty">{t("review.emptyQueue")}</p>
-        ) : (
+            <span className="count-pill">{view.items.length}</span>
+          </header>
           <div className="review-decision-list">
             {view.items.map(({ task, reasons: itemReasons }) => (
               <article className="review-decision-card" key={task.id}>
@@ -210,6 +231,15 @@ export function ReviewCenterPage() {
                 </div>
                 <div className="review-actions">
                   <span className="review-recommended-label">{t("review.recommendedAction")}</span>
+                  {task.status === "INBOX" ? (
+                    <button
+                      className="button button-primary button-small"
+                      onClick={() => void transition(task, "READY")}
+                      type="button"
+                    >
+                      {t("action.READY")}
+                    </button>
+                  ) : null}
                   {task.status === "READY" ? (
                     <button
                       className="button button-primary button-small"
@@ -222,7 +252,7 @@ export function ReviewCenterPage() {
                   {task.status === "DOING" ? (
                     <button
                       className="button button-primary button-small"
-                      onClick={() => void acknowledge(task, "review.feedback.continueDoing")}
+                      onClick={() => void addToday(task, "review.feedback.continueDoing")}
                       type="button"
                     >
                       {t("review.continueDoing")}
@@ -232,7 +262,10 @@ export function ReviewCenterPage() {
                     task.waitingFor === undefined || task.reviewAt === undefined ? (
                       <button
                         className="button button-primary button-small"
-                        onClick={() => setSelectedTask(task)}
+                        onClick={() => {
+                          setSelectedTaskAction(undefined);
+                          setSelectedTask(task);
+                        }}
                         type="button"
                       >
                         {t("task.setFollowUp")}
@@ -269,15 +302,6 @@ export function ReviewCenterPage() {
                           </button>
                         </>
                       ) : null}
-                      {task.status === "DOING" ? (
-                        <button
-                          className="button button-outline button-small"
-                          onClick={() => void addToday(task)}
-                          type="button"
-                        >
-                          {t("task.addToday")}
-                        </button>
-                      ) : null}
                       {task.status === "WAITING" ? (
                         <>
                           <button
@@ -289,7 +313,10 @@ export function ReviewCenterPage() {
                           </button>
                           <button
                             className="button button-quiet button-small"
-                            onClick={() => setSelectedTask(task)}
+                            onClick={() => {
+                              setSelectedTaskAction(undefined);
+                              setSelectedTask(task);
+                            }}
                             type="button"
                           >
                             {t("task.editFollowUp")}
@@ -351,8 +378,12 @@ export function ReviewCenterPage() {
               </article>
             ))}
           </div>
-        )}
-      </section>
+        </section>
+      ) : view !== undefined && view.focuslessProjects.length === 0 ? (
+        <p className="daily-close-done" role="status">
+          {t("review.emptyQueue")}
+        </p>
+      ) : null}
 
       {view !== undefined && view.focuslessProjects.length > 0 ? (
         <section className="review-section">
@@ -370,16 +401,12 @@ export function ReviewCenterPage() {
         </section>
       ) : null}
 
-      <section className="review-section">
-        <header>
-          <div>
+      {activity.length > 0 ? (
+        <details className="review-section">
+          <summary>
             <h2>{t("review.activity")}</h2>
-            <p>{t("review.activityDescription")}</p>
-          </div>
-        </header>
-        {activity.length === 0 ? (
-          <p className="inline-empty">{t("review.emptyActivity")}</p>
-        ) : (
+          </summary>
+          <p>{t("review.activityDescription")}</p>
           <ol className="review-activity-log">
             {activity.slice(0, 30).map((entry) => (
               <li key={entry.id}>
@@ -394,14 +421,24 @@ export function ReviewCenterPage() {
               </li>
             ))}
           </ol>
-        )}
-      </section>
+        </details>
+      ) : null}
       {selectedTask !== undefined ? (
         <TaskDrawer
-          onClose={() => setSelectedTask(undefined)}
-          onTaskChanged={(updated) => {
+          initialAction={selectedTaskAction}
+          onClose={() => {
+            setSelectedTask(undefined);
+            setSelectedTaskAction(undefined);
+          }}
+          onTaskChanged={async (updated) => {
+            setSelectedTaskAction(undefined);
             setSelectedTask(updated);
-            void load();
+            const reviewed =
+              updated.status === "WAITING"
+                ? await taskApplicationService.acknowledgeReview(updated.id)
+                : updated;
+            setSelectedTask(reviewed);
+            await load();
           }}
           task={selectedTask}
         />

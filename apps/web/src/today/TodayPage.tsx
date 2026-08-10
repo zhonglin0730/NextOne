@@ -9,6 +9,7 @@ import { TaskDrawer } from "../tasks/TaskDrawer";
 import { transitionWithWipConfirmation } from "../tasks/taskActions";
 import {
   notifyTasksChanged,
+  reviewApplicationService,
   taskApplicationService,
   tasksChangedEvent,
 } from "../tasks/taskService";
@@ -33,10 +34,7 @@ function candidateRank(task: Task): number {
 
 function sortKickoffCandidates(tasks: readonly Task[]): readonly Task[] {
   return [...new Map(tasks.map((task) => [task.id, task])).values()]
-    .filter(
-      (task) =>
-        task.status === "INBOX" || task.status === "READY" || task.status === "DOING",
-    )
+    .filter((task) => task.status === "INBOX" || task.status === "READY" || task.status === "DOING")
     .sort(
       (left, right) =>
         candidateRank(left) - candidateRank(right) ||
@@ -99,9 +97,7 @@ function TodayTaskCard({
             </button>
           </h3>
           {task.estimateMinutes === undefined ? null : (
-            <p className="task-meta">
-              {t("today.minutes", { count: task.estimateMinutes })}
-            </p>
+            <p className="task-meta">{t("today.minutes", { count: task.estimateMinutes })}</p>
           )}
         </div>
       </div>
@@ -183,18 +179,20 @@ export function TodayPage() {
   const [dailyCapacityMinutes, setDailyCapacityMinutes] = useState(defaultDailyCapacityMinutes);
   const [focusLimit, setFocusLimit] = useState(3);
   const [wipLimit, setWipLimit] = useState(3);
+  const [hasDailyCloseItems, setHasDailyCloseItems] = useState(false);
   const [zenTask, setZenTask] = useState<Task>();
   const [selectedTask, setSelectedTask] = useState<Task>();
+  const [selectedTaskAction, setSelectedTaskAction] = useState<"WAITING">();
   const [completingIds, setCompletingIds] = useState<ReadonlySet<string>>(new Set());
-  const kickoffStorageKey = `nextone.kickoff.${localDate}`;
 
   const load = useCallback(async () => {
     try {
-      const [today, inbox, board, preferences] = await Promise.all([
+      const [today, inbox, board, preferences, dailyClose] = await Promise.all([
         taskApplicationService.getToday(localDate),
         taskApplicationService.listInbox(),
         taskApplicationService.listBoardTasks(),
         loadPreferences(),
+        reviewApplicationService.getDailyClose(localDate, getTimeZone()),
       ]);
       const plannedIds = new Set(today.planned.map(({ task }) => task.id));
       const candidates = sortKickoffCandidates(
@@ -205,20 +203,16 @@ export function TodayPage() {
       setDailyCapacityMinutes(preferences.dailyCapacityMinutes ?? defaultDailyCapacityMinutes);
       setFocusLimit(preferences.focusLimit);
       setWipLimit(preferences.wipLimit);
-      if (
-        today.planned.length === 0 &&
-        candidates.length > 0 &&
-        localStorage.getItem(kickoffStorageKey) === null
-      ) {
-        setKickoffOpen(true);
-      }
+      setHasDailyCloseItems(
+        dailyClose.completed.length + dailyClose.unfinished.length + dailyClose.canceled.length > 0,
+      );
       setError("");
     } catch {
       setError(t("common.error"));
     } finally {
       setLoading(false);
     }
-  }, [kickoffStorageKey, localDate, t]);
+  }, [localDate, t]);
 
   useEffect(() => {
     void load();
@@ -234,6 +228,11 @@ export function TodayPage() {
     window.confirm(`${t("wip.title", { limit })}\n\n${t("wip.confirm")}`);
 
   const transition = async (task: Task, status: TodayTransitionStatus): Promise<boolean> => {
+    if (status === "WAITING") {
+      setSelectedTaskAction("WAITING");
+      setSelectedTask(task);
+      return false;
+    }
     try {
       const updated =
         status === "READY" && task.status === "DOING"
@@ -255,6 +254,9 @@ export function TodayPage() {
 
   const remove = async (task: Task) => {
     try {
+      if (task.status === "DOING") {
+        await taskApplicationService.transition(task.id, "READY");
+      }
       await taskApplicationService.removeFromToday(task.id, localDate);
       notifyTasksChanged();
       setFeedback(t("today.feedback.removed", { title: task.title }));
@@ -297,10 +299,7 @@ export function TodayPage() {
     }
   };
 
-  const dismissKickoff = useCallback(() => {
-    localStorage.setItem(kickoffStorageKey, "later");
-    setKickoffOpen(false);
-  }, [kickoffStorageKey]);
+  const dismissKickoff = useCallback(() => setKickoffOpen(false), []);
 
   const startDay = async (tasks: readonly Task[]) => {
     try {
@@ -316,7 +315,6 @@ export function TodayPage() {
           "FOCUS",
         );
       }
-      localStorage.setItem(kickoffStorageKey, "started");
       setKickoffOpen(false);
       notifyTasksChanged();
     } catch {
@@ -325,15 +323,15 @@ export function TodayPage() {
   };
 
   const commitments = useMemo<readonly TodayCommitment[]>(() => {
-    return view.planned.map(({ task }) => ({ task }));
-  }, [view.planned]);
-  const doingCommitmentCount = commitments.filter(
-    ({ task }) => task.status === "DOING",
-  ).length;
-  const capacityTasks = useMemo(
-    () => commitments.map(({ task }) => task),
-    [commitments],
-  );
+    const planned = view.planned.map(({ task }) => ({ task }));
+    const plannedIds = new Set(planned.map(({ task }) => task.id));
+    return [
+      ...planned,
+      ...view.doing.filter((task) => !plannedIds.has(task.id)).map((task) => ({ task })),
+    ];
+  }, [view.doing, view.planned]);
+  const doingCommitmentCount = commitments.filter(({ task }) => task.status === "DOING").length;
+  const capacityTasks = useMemo(() => commitments.map(({ task }) => task), [commitments]);
 
   const dateFormatter = new Intl.DateTimeFormat(i18n.resolvedLanguage ?? "zh-CN", {
     dateStyle: "full",
@@ -351,16 +349,20 @@ export function TodayPage() {
           <time className="date-pill" dateTime={localDate}>
             {dateFormatter.format(new Date(`${localDate}T12:00:00`))}
           </time>
-          <Link className="button button-outline" to="/review/daily">
-            {t("dailyClose.open")}
-          </Link>
+          {hasDailyCloseItems ? (
+            <Link className="button button-outline" to="/review/daily">
+              {t("dailyClose.open")}
+            </Link>
+          ) : null}
         </div>
       </header>
 
       {error.length > 0 ? <p className="page-error">{error}</p> : null}
       <ActionToast message={feedback} onDismiss={() => setFeedback("")} />
 
-      <DailyCapacity capacityMinutes={dailyCapacityMinutes} tasks={capacityTasks} />
+      {capacityTasks.length > 0 ? (
+        <DailyCapacity capacityMinutes={dailyCapacityMinutes} tasks={capacityTasks} />
+      ) : null}
 
       <div className="today-grid">
         <section className="today-section today-planned" aria-labelledby="commitments-title">
@@ -382,20 +384,15 @@ export function TodayPage() {
             <div className="section-empty">
               <strong>{t("today.emptyPlanned")}</strong>
               <p>{t("today.emptyPlannedDescription")}</p>
-              <div className="section-empty-actions">
-                {kickoffCandidates.length > 0 ? (
-                  <button
-                    className="button button-primary"
-                    onClick={() => setKickoffOpen(true)}
-                    type="button"
-                  >
-                    {t("kickoff.open")}
-                  </button>
-                ) : null}
-                <Link className="button button-outline" to="/board">
-                  {t("today.openBoardForToday")}
-                </Link>
-              </div>
+              {kickoffCandidates.length > 0 ? (
+                <button
+                  className="button button-primary"
+                  onClick={() => setKickoffOpen(true)}
+                  type="button"
+                >
+                  {t("kickoff.open")}
+                </button>
+              ) : null}
             </div>
           ) : (
             <div className="today-task-list">
@@ -405,7 +402,10 @@ export function TodayPage() {
                   isCompleting={completingIds.has(commitment.task.id)}
                   key={commitment.task.id}
                   onComplete={(task) => void handleComplete(task)}
-                  onOpen={setSelectedTask}
+                  onOpen={(task) => {
+                    setSelectedTaskAction(undefined);
+                    setSelectedTask(task);
+                  }}
                   onRemove={(task) => void remove(task)}
                   onTransition={(task, status) => void transition(task, status)}
                   onZen={setZenTask}
@@ -434,8 +434,15 @@ export function TodayPage() {
       )}
       {selectedTask === undefined ? null : (
         <TaskDrawer
-          onClose={() => setSelectedTask(undefined)}
-          onTaskChanged={setSelectedTask}
+          initialAction={selectedTaskAction}
+          onClose={() => {
+            setSelectedTask(undefined);
+            setSelectedTaskAction(undefined);
+          }}
+          onTaskChanged={(task) => {
+            setSelectedTaskAction(undefined);
+            setSelectedTask(task);
+          }}
           task={selectedTask}
         />
       )}

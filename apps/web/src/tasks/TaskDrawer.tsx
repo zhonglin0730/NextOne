@@ -20,11 +20,21 @@ import {
 
 interface TaskDrawerProps {
   task: Task;
+  initialAction?: "WAITING" | undefined;
   onClose: () => void;
-  onTaskChanged: (task: Task) => void;
+  onTaskChanged: (task: Task) => void | Promise<void>;
 }
 
-export function TaskDrawer({ task, onClose, onTaskChanged }: TaskDrawerProps) {
+const primaryTaskActions: Readonly<Record<TaskStatus, { labelKey: string; status: TaskStatus }>> = {
+  INBOX: { labelKey: "inbox.clarify", status: "READY" },
+  READY: { labelKey: "action.DOING", status: "DOING" },
+  DOING: { labelKey: "action.COMPLETED", status: "COMPLETED" },
+  WAITING: { labelKey: "board.resumeDoing", status: "DOING" },
+  COMPLETED: { labelKey: "board.reopen", status: "READY" },
+  CANCELED: { labelKey: "board.reopen", status: "READY" },
+};
+
+export function TaskDrawer({ task, initialAction, onClose, onTaskChanged }: TaskDrawerProps) {
   const { i18n, t } = useTranslation();
   const [title, setTitle] = useState(task.title);
   const [note, setNote] = useState(task.note ?? "");
@@ -39,10 +49,15 @@ export function TaskDrawer({ task, onClose, onTaskChanged }: TaskDrawerProps) {
   const [projects, setProjects] = useState<readonly Project[]>([]);
   const [workPackages, setWorkPackages] = useState<readonly WorkPackage[]>([]);
   const [addedToday, setAddedToday] = useState(false);
+  const [planningOpen, setPlanningOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
+  const [waitingIntent, setWaitingIntent] = useState(
+    initialAction === "WAITING" && task.status !== "WAITING",
+  );
+  const isWaitingForm = task.status === "WAITING" || waitingIntent;
 
   const loadEvents = async () => {
     setEvents(await taskApplicationService.listTaskEvents(task.id));
@@ -72,15 +87,19 @@ export function TaskDrawer({ task, onClose, onTaskChanged }: TaskDrawerProps) {
       setWorkPackages([]);
       return;
     }
-    void taskApplicationService
-      .listProjectWorkPackages(projectId)
-      .then(setWorkPackages);
+    void taskApplicationService.listProjectWorkPackages(projectId).then(setWorkPackages);
   }, [projectId, task.id]);
 
   useEffect(() => {
     setDirty(false);
     setSaved(false);
   }, [task.id]);
+
+  useEffect(() => {
+    const shouldWait = initialAction === "WAITING" && task.status !== "WAITING";
+    setWaitingIntent(shouldWait);
+    setPlanningOpen(false);
+  }, [initialAction, task.id, task.status]);
 
   const markDirty = () => {
     setDirty(true);
@@ -106,11 +125,17 @@ export function TaskDrawer({ task, onClose, onTaskChanged }: TaskDrawerProps) {
 
   const save = async (event: FormEvent) => {
     event.preventDefault();
+
+    if (isWaitingForm && (waitingFor.trim().length === 0 || reviewAt.length === 0)) {
+      setError(t("task.waitingDetailsMissing"));
+      return;
+    }
+
     setSubmitting(true);
     setError("");
 
     try {
-      const updated = await taskApplicationService.updateDetails(task.id, {
+      let updated = await taskApplicationService.updateDetails(task.id, {
         title,
         note: note.trim().length === 0 ? null : note,
         projectId: projectId.length === 0 ? null : projectId,
@@ -121,7 +146,21 @@ export function TaskDrawer({ task, onClose, onTaskChanged }: TaskDrawerProps) {
         energyLevel: energyLevel === "" ? null : energyLevel,
         waitingFor: waitingFor.trim().length === 0 ? null : waitingFor,
       });
-      onTaskChanged(updated);
+      if (waitingIntent) {
+        const waitingTask = await transitionWithWipConfirmation(
+          updated.id,
+          "WAITING",
+          () => false,
+          false,
+        );
+        if (waitingTask === undefined) {
+          return;
+        }
+        updated = waitingTask;
+        setWaitingIntent(false);
+        setAddedToday(false);
+      }
+      await onTaskChanged(updated);
       notifyTasksChanged();
       await loadEvents();
       setDirty(false);
@@ -135,6 +174,12 @@ export function TaskDrawer({ task, onClose, onTaskChanged }: TaskDrawerProps) {
   };
 
   const changeStatus = async (status: TaskStatus) => {
+    if (status === "WAITING") {
+      setWaitingIntent(true);
+      setSaved(false);
+      setError("");
+      return;
+    }
     if (status === "CANCELED" && !window.confirm(t("task.abandonConfirm"))) {
       return;
     }
@@ -153,10 +198,8 @@ export function TaskDrawer({ task, onClose, onTaskChanged }: TaskDrawerProps) {
       if (updated === undefined) {
         return;
       }
-      if (status === "WAITING") {
-        setAddedToday(false);
-      }
-      onTaskChanged(updated);
+      setWaitingIntent(false);
+      await onTaskChanged(updated);
       await loadEvents();
       setDirty(false);
     } catch {
@@ -202,6 +245,13 @@ export function TaskDrawer({ task, onClose, onTaskChanged }: TaskDrawerProps) {
       status === "READY" || status === "DOING" || status === "WAITING" || status === "COMPLETED"
     );
   });
+  const primaryAction = primaryTaskActions[task.status];
+  const secondaryTransitions = visibleTransitions.filter(
+    (status) => status !== primaryAction.status,
+  );
+  const canAddToday = task.status === "READY" || task.status === "DOING";
+  const canCancel = availableTransitions.includes("CANCELED");
+  const hasMoreActions = canAddToday || canCancel || secondaryTransitions.length > 0;
   const formatter = new Intl.DateTimeFormat(i18n.resolvedLanguage ?? "zh-CN", {
     dateStyle: "medium",
     timeStyle: "short",
@@ -235,34 +285,61 @@ export function TaskDrawer({ task, onClose, onTaskChanged }: TaskDrawerProps) {
           <span className={`status-badge status-${task.status.toLowerCase()}`}>
             {t(`status.${task.status}`)}
           </span>
-          <div className="status-actions">
-            {task.status === "READY" || task.status === "DOING" ? (
+          {waitingIntent ? null : (
+            <div className="status-actions">
               <button
-                className="button button-outline"
-                disabled={submitting || addedToday}
-                onClick={() => void addToday()}
-                type="button"
-              >
-                {addedToday ? t("task.addedToday") : t("task.addToday")}
-              </button>
-            ) : null}
-            {visibleTransitions.map((status) => (
-              <button
-                className={`button ${status === "DOING" ? "button-primary" : "button-quiet"}`}
+                className="button button-primary"
                 disabled={submitting}
-                key={status}
-                onClick={() => void changeStatus(status)}
+                onClick={() => void changeStatus(primaryAction.status)}
                 type="button"
               >
-                {status === "DOING" && task.status === "WAITING"
-                  ? t("board.resumeDoing")
-                  : t(`action.${status}`)}
+                {t(primaryAction.labelKey)}
               </button>
-            ))}
-          </div>
+              {hasMoreActions ? (
+                <details className="task-more-actions">
+                  <summary aria-label={t("board.moreActionsFor", { title: task.title })}>
+                    {t("board.moreActions")}
+                  </summary>
+                  <div className="status-actions">
+                    {canAddToday && !addedToday ? (
+                      <button
+                        className="button button-quiet"
+                        disabled={submitting}
+                        onClick={() => void addToday()}
+                        type="button"
+                      >
+                        {t("task.addToday")}
+                      </button>
+                    ) : null}
+                    {secondaryTransitions.map((status) => (
+                      <button
+                        className="button button-quiet"
+                        disabled={submitting}
+                        key={status}
+                        onClick={() => void changeStatus(status)}
+                        type="button"
+                      >
+                        {t(`action.${status}`)}
+                      </button>
+                    ))}
+                    {canCancel ? (
+                      <button
+                        className="button button-danger"
+                        disabled={submitting}
+                        onClick={() => void changeStatus("CANCELED")}
+                        type="button"
+                      >
+                        {t("task.abandon")}
+                      </button>
+                    ) : null}
+                  </div>
+                </details>
+              ) : null}
+            </div>
+          )}
         </div>
 
-        {task.status === "WAITING" ? (
+        {isWaitingForm ? (
           <p className="waiting-workflow-hint">{t("task.waitingTodayHint")}</p>
         ) : null}
 
@@ -307,132 +384,151 @@ export function TaskDrawer({ task, onClose, onTaskChanged }: TaskDrawerProps) {
               ))}
             </select>
           </label>
-          {projectId.length === 0 ? null : (
-            <label className="form-field details-span">
-              <span>{t("task.workPackage")}</span>
-              <select
-                onChange={(event) => {
-                  setWorkPackageId(event.target.value);
-                  markDirty();
-                }}
-                value={workPackageId}
-              >
-                <option value="">{t("task.workPackageRoot")}</option>
-                {workPackages.map((workPackage) => (
-                  <option key={workPackage.id} value={workPackage.id}>
-                    {workPackage.title}
-                  </option>
-                ))}
-              </select>
-              <small>{t("task.workPackageHint")}</small>
-            </label>
-          )}
-          <label className="form-field">
-            <span>{t("task.deadline")}</span>
-            <input
-              onChange={(event) => {
-                setDeadlineAt(event.target.value);
-                markDirty();
-              }}
-              type="date"
-              value={deadlineAt}
-            />
-          </label>
-          <label className="form-field">
-            <span>{t(task.status === "WAITING" ? "task.followUpAt" : "task.reviewAt")}</span>
-            <input
-              onChange={(event) => {
-                setReviewAt(event.target.value);
-                markDirty();
-              }}
-              required={task.status === "WAITING"}
-              type="date"
-              value={reviewAt}
-            />
-            <small>
-              {t(task.status === "WAITING" ? "task.followUpAtHint" : "task.reviewAtHint")}
-            </small>
-          </label>
-          <label className="form-field">
-            <span>{t("task.estimate")}</span>
-            <input
-              min="1"
-              onChange={(event) => {
-                setEstimateMinutes(event.target.value);
-                markDirty();
-              }}
-              type="number"
-              value={estimateMinutes}
-            />
-            <small>{t("task.estimateHint")}</small>
-          </label>
-          <details className="task-advanced details-span">
-            <summary>{t("capture.advanced")}</summary>
-            <label className="form-field">
-              <span>{t("task.energy")}</span>
-              <select
-                onChange={(event) => {
-                  setEnergyLevel(event.target.value as EnergyLevel | "");
-                  markDirty();
-                }}
-                value={energyLevel}
-              >
-                <option value="">{t("capture.energyNone")}</option>
-                <option value="LOW">{t("capture.energyLow")}</option>
-                <option value="MEDIUM">{t("capture.energyMedium")}</option>
-                <option value="HIGH">{t("capture.energyHigh")}</option>
-              </select>
-              <small>{t("task.energyHint")}</small>
-            </label>
-          </details>
-          {task.status === "WAITING" ? (
-            <label className="form-field details-span">
-              <span>{t("task.waitingFor")}</span>
-              <input
-                onChange={(event) => {
-                  setWaitingFor(event.target.value);
-                  markDirty();
-                }}
-                placeholder={t("task.waitingForPlaceholder")}
-                required
-                value={waitingFor}
-              />
-              <small>{t("task.waitingForHint")}</small>
-            </label>
+          {isWaitingForm ? (
+            <div className="details-grid waiting-details-fields details-span">
+              <label className="form-field details-span">
+                <span>{t("task.waitingFor")}</span>
+                <input
+                  onChange={(event) => {
+                    setWaitingFor(event.target.value);
+                    markDirty();
+                  }}
+                  placeholder={t("task.waitingForPlaceholder")}
+                  required
+                  value={waitingFor}
+                />
+                <small>{t("task.waitingForHint")}</small>
+              </label>
+              <label className="form-field details-span">
+                <span>{t("task.followUpAt")}</span>
+                <input
+                  aria-required="true"
+                  min={getLocalDate()}
+                  onChange={(event) => {
+                    setReviewAt(event.target.value);
+                    markDirty();
+                  }}
+                  required
+                  type="date"
+                  value={reviewAt}
+                />
+                <small>{t("task.followUpAtHint")}</small>
+              </label>
+            </div>
           ) : null}
-
+          <details
+            className="task-advanced details-span"
+            onToggle={(event) => setPlanningOpen(event.currentTarget.open)}
+            open={planningOpen}
+          >
+            <summary>{t("capture.advanced")}</summary>
+            <div className="details-grid">
+              {projectId.length === 0 ? null : (
+                <label className="form-field details-span">
+                  <span>{t("task.workPackage")}</span>
+                  <select
+                    onChange={(event) => {
+                      setWorkPackageId(event.target.value);
+                      markDirty();
+                    }}
+                    value={workPackageId}
+                  >
+                    <option value="">{t("task.workPackageRoot")}</option>
+                    {workPackages.map((workPackage) => (
+                      <option key={workPackage.id} value={workPackage.id}>
+                        {workPackage.title}
+                      </option>
+                    ))}
+                  </select>
+                  <small>{t("task.workPackageHint")}</small>
+                </label>
+              )}
+              <label className="form-field">
+                <span>{t("task.deadline")}</span>
+                <input
+                  onChange={(event) => {
+                    setDeadlineAt(event.target.value);
+                    markDirty();
+                  }}
+                  type="date"
+                  value={deadlineAt}
+                />
+              </label>
+              {isWaitingForm ? null : (
+                <label className="form-field">
+                  <span>{t("task.reviewAt")}</span>
+                  <input
+                    onChange={(event) => {
+                      setReviewAt(event.target.value);
+                      markDirty();
+                    }}
+                    type="date"
+                    value={reviewAt}
+                  />
+                  <small>{t("task.reviewAtHint")}</small>
+                </label>
+              )}
+              <label className="form-field">
+                <span>{t("task.estimate")}</span>
+                <input
+                  min="1"
+                  onChange={(event) => {
+                    setEstimateMinutes(event.target.value);
+                    markDirty();
+                  }}
+                  type="number"
+                  value={estimateMinutes}
+                />
+                <small>{t("task.estimateHint")}</small>
+              </label>
+              <label className="form-field">
+                <span>{t("task.energy")}</span>
+                <select
+                  onChange={(event) => {
+                    setEnergyLevel(event.target.value as EnergyLevel | "");
+                    markDirty();
+                  }}
+                  value={energyLevel}
+                >
+                  <option value="">{t("capture.energyNone")}</option>
+                  <option value="LOW">{t("capture.energyLow")}</option>
+                  <option value="MEDIUM">{t("capture.energyMedium")}</option>
+                  <option value="HIGH">{t("capture.energyHigh")}</option>
+                </select>
+                <small>{t("task.energyHint")}</small>
+              </label>
+            </div>
+          </details>
           {error.length > 0 ? <p className="form-error details-span">{error}</p> : null}
 
           <div className="drawer-form-actions details-span">
-            {availableTransitions.includes("CANCELED") ? (
-              <button
-                className="button button-danger"
-                disabled={submitting}
-                onClick={() => void changeStatus("CANCELED")}
-                type="button"
-              >
-                {t("task.abandon")}
-              </button>
-            ) : (
-              <span />
-            )}
+            <span />
             <div className="drawer-save-actions">
               <span aria-live="polite" className="save-status" role="status">
                 {saved ? `✓ ${t("task.saved")}` : ""}
               </span>
               <button
                 className="button button-primary"
-                disabled={title.trim().length === 0 || submitting || !dirty}
+                disabled={
+                  title.trim().length === 0 ||
+                  submitting ||
+                  (!dirty && !waitingIntent) ||
+                  (isWaitingForm && (waitingFor.trim().length === 0 || reviewAt.length === 0))
+                }
                 type="submit"
               >
-                {submitting ? t("common.saving") : t("common.save")}
+                {submitting
+                  ? t("common.saving")
+                  : waitingIntent
+                    ? t("task.confirmWaiting")
+                    : t("common.save")}
               </button>
             </div>
           </div>
         </form>
 
-        <section className="activity-section" aria-labelledby="activity-title">
-          <h3 id="activity-title">{t("task.activity")}</h3>
+        <details className="activity-section task-advanced">
+          <summary id="activity-title">{t("task.activity")}</summary>
           {events.length === 0 ? (
             <p className="muted">{t("task.noActivity")}</p>
           ) : (
@@ -450,7 +546,7 @@ export function TaskDrawer({ task, onClose, onTaskChanged }: TaskDrawerProps) {
               ))}
             </ol>
           )}
-        </section>
+        </details>
       </aside>
     </div>
   );

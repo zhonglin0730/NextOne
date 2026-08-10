@@ -1,8 +1,10 @@
 import type { DailyCloseTask, DailyCloseView } from "@nextone/application";
+import type { Task } from "@nextone/domain";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router";
 
+import { TaskDrawer } from "../tasks/TaskDrawer";
 import {
   notifyTasksChanged,
   reviewApplicationService,
@@ -31,6 +33,8 @@ export function DailyClosePage() {
   const [processed, setProcessed] = useState<ReadonlySet<string>>(new Set());
   const [canceled, setCanceled] = useState<readonly DailyCloseTask[]>([]);
   const [reviewDates, setReviewDates] = useState<Record<string, string>>({});
+  const [selectedTask, setSelectedTask] = useState<Task>();
+  const [selectedTaskAction, setSelectedTaskAction] = useState<"WAITING">();
   const [error, setError] = useState("");
 
   const load = useCallback(async () => {
@@ -89,6 +93,11 @@ export function DailyClosePage() {
   };
 
   const move = async (entry: DailyCloseTask, action: "WAITING" | "SOMEDAY" | "CANCELED") => {
+    if (action === "WAITING") {
+      setSelectedTask(entry.task);
+      setSelectedTaskAction("WAITING");
+      return;
+    }
     if (action === "CANCELED" && !window.confirm(t("task.abandonConfirm"))) {
       return;
     }
@@ -143,145 +152,169 @@ export function DailyClosePage() {
           <h1 id="daily-close-title">{t("dailyClose.title")}</h1>
           <p>{t("dailyClose.description")}</p>
         </div>
-        <span className="count-pill">
-          {t("dailyClose.tomorrowCount", { count: tomorrowCount, limit: focusLimit })}
-        </span>
+        <div className="page-header-actions">
+          <Link className="button button-outline" to="/review">
+            {t("review.title")}
+          </Link>
+          <span className="count-pill">
+            {t("dailyClose.tomorrowCount", { count: tomorrowCount, limit: focusLimit })}
+          </span>
+        </div>
       </header>
 
       {error.length > 0 ? <p className="page-error">{error}</p> : null}
 
-      <section className="daily-close-section">
-        <header>
-          <span>1</span>
-          <div>
-            <h2>{t("dailyClose.completed")}</h2>
-            <p>{t("dailyClose.completedDescription")}</p>
-          </div>
-        </header>
-        {view === undefined || view.completed.length === 0 ? (
-          <p className="inline-empty">{t("dailyClose.noCompleted")}</p>
-        ) : (
+      {view !== undefined && view.completed.length > 0 ? (
+        <section className="review-section">
+          <header>
+            <div>
+              <h2>{t("dailyClose.completed")}</h2>
+              <p>{t("dailyClose.completedDescription")}</p>
+            </div>
+          </header>
           <ul className="daily-close-simple-list">
             {view.completed.map(({ task }) => (
               <li key={task.id}>✓ {task.title}</li>
             ))}
           </ul>
-        )}
-      </section>
+        </section>
+      ) : null}
 
-      <section className="daily-close-section">
-        <header>
-          <span>2</span>
-          <div>
-            <h2>{t("dailyClose.unfinished")}</h2>
-            <p>{t("dailyClose.unfinishedDescription")}</p>
-          </div>
-        </header>
-        {unfinished.length === 0 ? (
-          <p className="daily-close-done">{t("dailyClose.allProcessed")}</p>
-        ) : (
+      {view !== undefined && unfinished.length > 0 ? (
+        <section className="review-section">
+          <header>
+            <div>
+              <h2>{t("dailyClose.unfinished")}</h2>
+              <p>{t("dailyClose.unfinishedDescription")}</p>
+            </div>
+            <span className="count-pill">{unfinished.length}</span>
+          </header>
           <div className="daily-close-task-list">
             {unfinished.map((entry) => (
               <article key={entry.task.id}>
                 <strong>{entry.task.title}</strong>
                 <span>{t(`status.${entry.task.status}`)}</span>
                 <div className="card-actions">
+                  <span className="review-recommended-label">{t("review.recommendedAction")}</span>
                   <button
                     className="button button-primary button-small"
                     onClick={() => void continueTomorrow(entry)}
+                    type="button"
                   >
                     {t("dailyClose.continueTomorrow")}
                   </button>
-                  <button
-                    className="button button-outline button-small"
-                    onClick={() => void removeToday(entry)}
-                  >
-                    {t("dailyClose.removeToday")}
-                  </button>
-                  <button
-                    className="button button-quiet button-small"
-                    onClick={() => void move(entry, "WAITING")}
-                  >
-                    {t("action.WAITING")}
-                  </button>
-                  <button
-                    className="button button-quiet button-small"
-                    onClick={() => void move(entry, "SOMEDAY")}
-                  >
-                    {t("action.someday")}
-                  </button>
-                  <button
-                    className="button button-danger button-small"
-                    onClick={() => void move(entry, "CANCELED")}
-                  >
-                    {t("action.CANCELED")}
-                  </button>
-                </div>
-                <div className="review-date-action">
-                  <input
-                    aria-label={t("review.setReviewDate")}
-                    min={tomorrow}
-                    onChange={(event) =>
-                      setReviewDates((current) => ({
-                        ...current,
-                        [entry.task.id]: event.target.value,
-                      }))
-                    }
-                    type="date"
-                    value={reviewDates[entry.task.id] ?? ""}
-                  />
-                  <button
-                    className="button button-outline button-small"
-                    disabled={(reviewDates[entry.task.id] ?? "").length === 0}
-                    onClick={() => void snooze(entry)}
-                    type="button"
-                  >
-                    {t("review.setReviewDate")}
-                  </button>
+                  <details className="review-more-actions">
+                    <summary>{t("review.otherChoices")}</summary>
+                    <div>
+                      <button
+                        className="button button-outline button-small"
+                        onClick={() => void removeToday(entry)}
+                        type="button"
+                      >
+                        {t("dailyClose.removeToday")}
+                      </button>
+                      <button
+                        className="button button-quiet button-small"
+                        onClick={() => void move(entry, "WAITING")}
+                        type="button"
+                      >
+                        {t("action.WAITING")}
+                      </button>
+                      <button
+                        className="button button-quiet button-small"
+                        onClick={() => void move(entry, "SOMEDAY")}
+                        type="button"
+                      >
+                        {t("action.someday")}
+                      </button>
+                      <button
+                        className="button button-danger button-small"
+                        onClick={() => void move(entry, "CANCELED")}
+                        type="button"
+                      >
+                        {t("action.CANCELED")}
+                      </button>
+                      <div className="review-date-action">
+                        <div className="review-date-copy">
+                          <strong>{t("review.remindLater")}</strong>
+                          <span>{t("review.reviewDateDescription")}</span>
+                        </div>
+                        <input
+                          aria-label={t("review.setReviewDate")}
+                          min={tomorrow}
+                          onChange={(event) =>
+                            setReviewDates((current) => ({
+                              ...current,
+                              [entry.task.id]: event.target.value,
+                            }))
+                          }
+                          type="date"
+                          value={reviewDates[entry.task.id] ?? ""}
+                        />
+                        <button
+                          className="button button-outline button-small"
+                          disabled={(reviewDates[entry.task.id] ?? "").length === 0}
+                          onClick={() => void snooze(entry)}
+                          type="button"
+                        >
+                          {t("review.setReviewDate")}
+                        </button>
+                      </div>
+                    </div>
+                  </details>
                 </div>
               </article>
             ))}
           </div>
-        )}
-      </section>
+        </section>
+      ) : view !== undefined ? (
+        <p className="daily-close-done" role="status">
+          {t("dailyClose.allProcessed")}
+        </p>
+      ) : null}
 
-      <section className="daily-close-section">
-        <header>
-          <span>3</span>
-          <div>
-            <h2>{t("dailyClose.abandoned")}</h2>
-            <p>{t("dailyClose.abandonedDescription")}</p>
-          </div>
-        </header>
-        {canceledInClose.length === 0 ? (
-          <p className="inline-empty">{t("dailyClose.noAbandoned")}</p>
-        ) : (
+      {canceledInClose.length > 0 ? (
+        <section className="review-section">
+          <header>
+            <div>
+              <h2>{t("dailyClose.abandoned")}</h2>
+              <p>{t("dailyClose.abandonedDescription")}</p>
+            </div>
+          </header>
           <ul className="daily-close-simple-list daily-close-canceled">
             {canceledInClose.map(({ task }) => (
               <li key={task.id}>× {task.title}</li>
             ))}
           </ul>
-        )}
-      </section>
+        </section>
+      ) : null}
 
-      <section className="daily-close-section">
-        <header>
-          <span>4</span>
-          <div>
-            <h2>{t("dailyClose.tomorrow", { limit: focusLimit })}</h2>
-            <p>{t("dailyClose.tomorrowDescription", { limit: focusLimit })}</p>
-          </div>
-        </header>
-        <p className="daily-close-tomorrow-note">
-          {t("dailyClose.tomorrowSelected", { count: tomorrowCount })}
-        </p>
-      </section>
+      {view !== undefined ? (
+        <footer className="daily-close-footer">
+          <Link className="button button-primary" to="/today">
+            {unfinished.length === 0 ? t("dailyClose.finish") : t("dailyClose.saveExit")}
+          </Link>
+        </footer>
+      ) : null}
 
-      <footer className="daily-close-footer">
-        <Link className="button button-primary" to="/today">
-          {unfinished.length === 0 ? t("dailyClose.finish") : t("dailyClose.saveExit")}
-        </Link>
-      </footer>
+      {selectedTask === undefined ? null : (
+        <TaskDrawer
+          initialAction={selectedTaskAction}
+          onClose={() => {
+            setSelectedTask(undefined);
+            setSelectedTaskAction(undefined);
+          }}
+          onTaskChanged={(task) => {
+            setSelectedTask(task);
+            setSelectedTaskAction(undefined);
+            if (task.status === "WAITING") {
+              markProcessed(task.id);
+            }
+            void load();
+          }}
+          task={selectedTask}
+        />
+      )}
     </section>
   );
 }

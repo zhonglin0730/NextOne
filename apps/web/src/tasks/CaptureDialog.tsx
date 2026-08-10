@@ -40,7 +40,6 @@ export function CaptureDialog({
   const [energyLevel, setEnergyLevel] = useState<EnergyLevel | "">("");
   const [projects, setProjects] = useState<readonly Project[]>([]);
   const [submitting, setSubmitting] = useState(false);
-  const [destination, setDestination] = useState<CaptureDestination>(defaultDestination);
   const [capturedTaskId, setCapturedTaskId] = useState<string>();
   const [error, setError] = useState("");
   const [dirty, setDirty] = useState(false);
@@ -55,7 +54,6 @@ export function CaptureDialog({
       setReviewAt("");
       setEstimateMinutes("");
       setEnergyLevel("");
-      setDestination(defaultDestination);
       setCapturedTaskId(undefined);
       setError("");
       setDirty(false);
@@ -86,6 +84,8 @@ export function CaptureDialog({
   if (!open) {
     return null;
   }
+
+  const destination = defaultDestination;
 
   const submit = async () => {
     if (title.trim().length === 0 || submittingRef.current) {
@@ -180,38 +180,6 @@ export function CaptureDialog({
         </header>
 
         <form onSubmit={handleSubmit}>
-          <fieldset className="capture-destination">
-            <legend>{t("capture.destination")}</legend>
-            {defaultProjectId === undefined ? null : (
-              <label>
-                <input
-                  checked={destination === "PROJECT"}
-                  onChange={() => {
-                    setDestination("PROJECT");
-                    setProjectId(defaultProjectId ?? "");
-                  }}
-                  type="radio"
-                />
-                <span>{t("capture.destinationProject")}</span>
-              </label>
-            )}
-            <label>
-              <input
-                checked={destination === "TODAY"}
-                onChange={() => setDestination("TODAY")}
-                type="radio"
-              />
-              <span>{t("capture.destinationToday")}</span>
-            </label>
-            <label>
-              <input
-                checked={destination === "INBOX"}
-                onChange={() => setDestination("INBOX")}
-                type="radio"
-              />
-              <span>{t("capture.destinationInbox")}</span>
-            </label>
-          </fieldset>
           {destination === "PROJECT" ? (
             <p className="capture-project-context">
               <span>{t("capture.projectContext")}</span>
@@ -258,25 +226,25 @@ export function CaptureDialog({
                   value={note}
                 />
               </label>
-              <label className="form-field details-span">
-                <span>{t("task.project")}</span>
-                <select
-                  onChange={(event) => {
-                    setProjectId(event.target.value);
-                    setDirty(true);
-                  }}
-                  value={projectId}
-                >
-                  {destination === "PROJECT" ? null : (
+              {destination === "PROJECT" ? null : (
+                <label className="form-field details-span">
+                  <span>{t("task.project")}</span>
+                  <select
+                    onChange={(event) => {
+                      setProjectId(event.target.value);
+                      setDirty(true);
+                    }}
+                    value={projectId}
+                  >
                     <option value="">{t("project.noProject")}</option>
-                  )}
-                  {projects.map((project) => (
-                    <option key={project.id} value={project.id}>
-                      {project.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
+                    {projects.map((project) => (
+                      <option key={project.id} value={project.id}>
+                        {project.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
               <label className="form-field">
                 <span>{t("capture.deadline")}</span>
                 <input

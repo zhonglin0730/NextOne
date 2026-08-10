@@ -1,7 +1,7 @@
 import { WipLimitExceededError } from "@nextone/application";
 import type { Task, TaskStatus } from "@nextone/domain";
 
-import { getLocalDate } from "../today/date";
+import { getLocalDate, getTimeZone } from "../today/date";
 import { notifyTasksChanged, taskApplicationService } from "./taskService";
 
 export async function transitionWithWipConfirmation(
@@ -10,8 +10,7 @@ export async function transitionWithWipConfirmation(
   confirmOverride: (limit: number) => boolean,
   notify = true,
 ): Promise<Task | undefined> {
-  try {
-    const task = await taskApplicationService.transition(taskId, status);
+  const finishTransition = async (task: Task): Promise<Task> => {
     if (status === "WAITING") {
       await taskApplicationService.removeFromToday(taskId, getLocalDate());
     }
@@ -19,6 +18,20 @@ export async function transitionWithWipConfirmation(
       notifyTasksChanged();
     }
     return task;
+  };
+
+  const runTransition = (allowWipOverride = false) =>
+    status === "DOING"
+      ? taskApplicationService.startTaskForToday(taskId, getLocalDate(), getTimeZone(), {
+          ...(allowWipOverride ? { allowWipOverride: true } : {}),
+        })
+      : taskApplicationService.transition(taskId, status, {
+          ...(allowWipOverride ? { allowWipOverride: true } : {}),
+        });
+
+  try {
+    const task = await runTransition();
+    return finishTransition(task);
   } catch (error) {
     if (!(error instanceof WipLimitExceededError)) {
       throw error;
@@ -28,12 +41,7 @@ export async function transitionWithWipConfirmation(
       return undefined;
     }
 
-    const task = await taskApplicationService.transition(taskId, status, {
-      allowWipOverride: true,
-    });
-    if (notify) {
-      notifyTasksChanged();
-    }
-    return task;
+    const task = await runTransition(true);
+    return finishTransition(task);
   }
 }

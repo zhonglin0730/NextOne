@@ -250,6 +250,211 @@ async function persistTaskMutation(
   );
 }
 
+async function transitionTaskInTransaction(
+  transaction: StorageTransaction,
+  dependencies: TaskApplicationDependencies,
+  taskId: string,
+  to: TaskStatus,
+  options: TransitionTaskOptions = {},
+): Promise<Task> {
+  const current = await transaction.tasks.findById(taskId);
+
+  if (current === undefined) {
+    throw new Error("Task not found");
+  }
+
+  const occurredAt = dependencies.now();
+  const rules = await dependencies.loadRules?.();
+  const wipLimit = rules?.wipLimit ?? dependencies.wipLimit ?? 3;
+  let wipOverrideEvent: TaskEvent | undefined;
+
+  if (to === "DOING" && current.status !== "DOING") {
+    const doingTasks = (await transaction.tasks.list({ status: "DOING" })).filter(
+      (task) => task.visibility === "ACTIVE",
+    );
+
+    if (doingTasks.length >= wipLimit && options.allowWipOverride !== true) {
+      throw new WipLimitExceededError(wipLimit, doingTasks.length);
+    }
+
+    if (doingTasks.length >= wipLimit) {
+      wipOverrideEvent = {
+        id: dependencies.generateId(),
+        userId: current.userId,
+        taskId: current.id,
+        type: "WIP_LIMIT_OVERRIDDEN",
+        occurredAt,
+        metadata: {
+          fieldNames: ["doingLimit"],
+        },
+      };
+    }
+  }
+
+  const transitionedTask = transitionTask(current, to, occurredAt);
+
+  if (transitionedTask === current) {
+    return current;
+  }
+
+  const shouldReactivate =
+    current.visibility !== "ACTIVE" && (to === "READY" || to === "DOING" || to === "WAITING");
+  const task: Task = shouldReactivate
+    ? { ...transitionedTask, visibility: "ACTIVE" }
+    : transitionedTask;
+  const event: TaskEvent = {
+    id: dependencies.generateId(),
+    userId: task.userId,
+    taskId: task.id,
+    type: eventTypeForStatusTransition(current.status, to),
+    occurredAt,
+    metadata: {
+      fromStatus: current.status,
+      toStatus: to,
+    },
+  };
+
+  const events = wipOverrideEvent === undefined ? [event] : [wipOverrideEvent, event];
+  if (shouldReactivate) {
+    events.push({
+      id: dependencies.generateId(),
+      userId: task.userId,
+      taskId: task.id,
+      type: "VISIBILITY_CHANGED",
+      occurredAt,
+      metadata: {
+        fromVisibility: current.visibility,
+        toVisibility: "ACTIVE",
+      },
+    });
+  }
+  await persistTaskMutation(transaction, task, events, occurredAt, dependencies.generateId);
+  return task;
+}
+
+async function addTaskToTodayInTransaction(
+  transaction: StorageTransaction,
+  dependencies: TaskApplicationDependencies,
+  taskId: string,
+  localDate: string,
+  timeZone: string,
+  requestedSection?: DailyPlanSection,
+): Promise<DailyPlanItem> {
+  let task = await transaction.tasks.findById(taskId);
+
+  if (task === undefined) {
+    throw new Error("Task not found");
+  }
+
+  if (task.status !== "READY" && task.status !== "DOING") {
+    throw new TaskNotActionableForTodayError(task.status);
+  }
+
+  const occurredAt = dependencies.now();
+  if (task.visibility !== "ACTIVE") {
+    const activeTask: Task = {
+      ...task,
+      visibility: "ACTIVE",
+      updatedAt: occurredAt,
+      revision: task.revision + 1,
+    };
+    await persistTaskMutation(
+      transaction,
+      activeTask,
+      [
+        {
+          id: dependencies.generateId(),
+          userId: activeTask.userId,
+          taskId: activeTask.id,
+          type: "VISIBILITY_CHANGED",
+          occurredAt,
+          metadata: {
+            fromVisibility: task.visibility,
+            toVisibility: "ACTIVE",
+          },
+        },
+      ],
+      occurredAt,
+      dependencies.generateId,
+    );
+    task = activeTask;
+  }
+
+  let plan = await transaction.dailyPlans.findByDate(dependencies.userId, localDate);
+
+  if (plan === undefined) {
+    plan = {
+      id: dependencies.generateId(),
+      userId: dependencies.userId,
+      localDate,
+      timeZone,
+      createdAt: occurredAt,
+      updatedAt: occurredAt,
+      revision: 1,
+    };
+    await transaction.dailyPlans.save(plan);
+    await transaction.outbox.append(
+      createOutboxMutation(
+        {
+          userId: plan.userId,
+          entityType: "DAILY_PLAN",
+          entityId: plan.id,
+          payload: plan,
+        },
+        occurredAt,
+        dependencies.generateId,
+      ),
+    );
+  }
+
+  const existing = await transaction.dailyPlanItems.findByTask(plan.id, taskId);
+
+  if (existing !== undefined) {
+    return existing;
+  }
+
+  const planItems = await transaction.dailyPlanItems.listByPlanId(plan.id);
+  const focusCount = planItems.filter((item) => item.section === "FOCUS").length;
+  const rules = await dependencies.loadRules?.();
+  const focusLimit = rules?.focusLimit ?? 3;
+  const section =
+    requestedSection === "FOCUS" && focusCount >= focusLimit
+      ? "LATER"
+      : (requestedSection ?? (focusCount < focusLimit ? "FOCUS" : "LATER"));
+  const item: DailyPlanItem = {
+    id: dependencies.generateId(),
+    planId: plan.id,
+    taskId,
+    section,
+    sortKey: occurredAt,
+    createdAt: occurredAt,
+  };
+  const event: TaskEvent = {
+    id: dependencies.generateId(),
+    userId: task.userId,
+    taskId: task.id,
+    type: "ADDED_TO_DAILY_PLAN",
+    occurredAt,
+    metadata: {},
+  };
+
+  await transaction.dailyPlanItems.save(item);
+  await transaction.taskEvents.append(event);
+  await transaction.outbox.append(
+    createOutboxMutation(
+      {
+        userId: task.userId,
+        entityType: "DAILY_PLAN_ITEM",
+        entityId: item.id,
+        payload: item,
+      },
+      occurredAt,
+      dependencies.generateId,
+    ),
+  );
+  return item;
+}
+
 function compactTaskDetails(task: Task, input: UpdateTaskDetailsInput, now: string): Task {
   const {
     note: _note,
@@ -567,83 +772,42 @@ export class TaskApplicationService {
     to: TaskStatus,
     options: TransitionTaskOptions = {},
   ): Promise<Task> {
-    return this.dependencies.database.transaction(async (transaction) => {
-      const current = await transaction.tasks.findById(taskId);
+    return this.dependencies.database.transaction((transaction) =>
+      transitionTaskInTransaction(transaction, this.dependencies, taskId, to, options),
+    );
+  }
 
-      if (current === undefined) {
+  async startTaskForToday(
+    taskId: string,
+    localDate: string,
+    timeZone: string,
+    options: TransitionTaskOptions = {},
+  ): Promise<Task> {
+    return this.dependencies.database.transaction(async (transaction) => {
+      let task = await transaction.tasks.findById(taskId);
+
+      if (task === undefined) {
         throw new Error("Task not found");
       }
-      const occurredAt = this.dependencies.now();
-      const rules = await this.dependencies.loadRules?.();
-      const wipLimit = rules?.wipLimit ?? this.dependencies.wipLimit ?? 3;
-      let wipOverrideEvent: TaskEvent | undefined;
 
-      if (to === "DOING" && current.status !== "DOING") {
-        const doingTasks = (await transaction.tasks.list({ status: "DOING" })).filter(
-          (task) => task.visibility === "ACTIVE",
-        );
-
-        if (doingTasks.length >= wipLimit && options.allowWipOverride !== true) {
-          throw new WipLimitExceededError(wipLimit, doingTasks.length);
-        }
-
-        if (doingTasks.length >= wipLimit) {
-          wipOverrideEvent = {
-            id: this.dependencies.generateId(),
-            userId: current.userId,
-            taskId: current.id,
-            type: "WIP_LIMIT_OVERRIDDEN",
-            occurredAt,
-            metadata: {
-              fieldNames: ["doingLimit"],
-            },
-          };
-        }
+      if (task.status === "INBOX" || task.status === "COMPLETED" || task.status === "CANCELED") {
+        task = await transitionTaskInTransaction(transaction, this.dependencies, task.id, "READY");
       }
 
-      const transitionedTask = transitionTask(current, to, occurredAt);
-
-      if (transitionedTask === current) {
-        return current;
-      }
-
-      const shouldReactivate =
-        current.visibility !== "ACTIVE" && (to === "READY" || to === "DOING" || to === "WAITING");
-      const task: Task = shouldReactivate
-        ? { ...transitionedTask, visibility: "ACTIVE" }
-        : transitionedTask;
-      const event: TaskEvent = {
-        id: this.dependencies.generateId(),
-        userId: task.userId,
-        taskId: task.id,
-        type: eventTypeForStatusTransition(current.status, to),
-        occurredAt,
-        metadata: {
-          fromStatus: current.status,
-          toStatus: to,
-        },
-      };
-
-      const events = wipOverrideEvent === undefined ? [event] : [wipOverrideEvent, event];
-      if (shouldReactivate) {
-        events.push({
-          id: this.dependencies.generateId(),
-          userId: task.userId,
-          taskId: task.id,
-          type: "VISIBILITY_CHANGED",
-          occurredAt,
-          metadata: {
-            fromVisibility: current.visibility,
-            toVisibility: "ACTIVE",
-          },
-        });
-      }
-      await persistTaskMutation(
+      task = await transitionTaskInTransaction(
         transaction,
-        task,
-        events,
-        occurredAt,
-        this.dependencies.generateId,
+        this.dependencies,
+        task.id,
+        "DOING",
+        options,
+      );
+      await addTaskToTodayInTransaction(
+        transaction,
+        this.dependencies,
+        task.id,
+        localDate,
+        timeZone,
+        "FOCUS",
       );
       return task;
     });
@@ -864,121 +1028,16 @@ export class TaskApplicationService {
     timeZone: string,
     requestedSection?: DailyPlanSection,
   ): Promise<DailyPlanItem> {
-    return this.dependencies.database.transaction(async (transaction) => {
-      let task = await transaction.tasks.findById(taskId);
-
-      if (task === undefined) {
-        throw new Error("Task not found");
-      }
-
-      if (task.status !== "READY" && task.status !== "DOING") {
-        throw new TaskNotActionableForTodayError(task.status);
-      }
-
-      const occurredAt = this.dependencies.now();
-      if (task.visibility !== "ACTIVE") {
-        const activeTask: Task = {
-          ...task,
-          visibility: "ACTIVE",
-          updatedAt: occurredAt,
-          revision: task.revision + 1,
-        };
-        await persistTaskMutation(
-          transaction,
-          activeTask,
-          [
-            {
-              id: this.dependencies.generateId(),
-              userId: activeTask.userId,
-              taskId: activeTask.id,
-              type: "VISIBILITY_CHANGED",
-              occurredAt,
-              metadata: {
-                fromVisibility: task.visibility,
-                toVisibility: "ACTIVE",
-              },
-            },
-          ],
-          occurredAt,
-          this.dependencies.generateId,
-        );
-        task = activeTask;
-      }
-
-      let plan = await transaction.dailyPlans.findByDate(this.dependencies.userId, localDate);
-
-      if (plan === undefined) {
-        plan = {
-          id: this.dependencies.generateId(),
-          userId: this.dependencies.userId,
-          localDate,
-          timeZone,
-          createdAt: occurredAt,
-          updatedAt: occurredAt,
-          revision: 1,
-        };
-        await transaction.dailyPlans.save(plan);
-        await transaction.outbox.append(
-          createOutboxMutation(
-            {
-              userId: plan.userId,
-              entityType: "DAILY_PLAN",
-              entityId: plan.id,
-              payload: plan,
-            },
-            occurredAt,
-            this.dependencies.generateId,
-          ),
-        );
-      }
-
-      const existing = await transaction.dailyPlanItems.findByTask(plan.id, taskId);
-
-      if (existing !== undefined) {
-        return existing;
-      }
-
-      const planItems = await transaction.dailyPlanItems.listByPlanId(plan.id);
-      const focusCount = planItems.filter((item) => item.section === "FOCUS").length;
-      const rules = await this.dependencies.loadRules?.();
-      const focusLimit = rules?.focusLimit ?? 3;
-      const section =
-        requestedSection === "FOCUS" && focusCount >= focusLimit
-          ? "LATER"
-          : (requestedSection ?? (focusCount < focusLimit ? "FOCUS" : "LATER"));
-      const item: DailyPlanItem = {
-        id: this.dependencies.generateId(),
-        planId: plan.id,
+    return this.dependencies.database.transaction((transaction) =>
+      addTaskToTodayInTransaction(
+        transaction,
+        this.dependencies,
         taskId,
-        section,
-        sortKey: occurredAt,
-        createdAt: occurredAt,
-      };
-      const event: TaskEvent = {
-        id: this.dependencies.generateId(),
-        userId: task.userId,
-        taskId: task.id,
-        type: "ADDED_TO_DAILY_PLAN",
-        occurredAt,
-        metadata: {},
-      };
-
-      await transaction.dailyPlanItems.save(item);
-      await transaction.taskEvents.append(event);
-      await transaction.outbox.append(
-        createOutboxMutation(
-          {
-            userId: task.userId,
-            entityType: "DAILY_PLAN_ITEM",
-            entityId: item.id,
-            payload: item,
-          },
-          occurredAt,
-          this.dependencies.generateId,
-        ),
-      );
-      return item;
-    });
+        localDate,
+        timeZone,
+        requestedSection,
+      ),
+    );
   }
 
   async removeFromToday(taskId: string, localDate: string): Promise<void> {
@@ -1092,20 +1151,15 @@ export class TaskApplicationService {
         plan,
         planned: todayTasks.filter(
           ({ task }) =>
-            task.visibility === "ACTIVE" &&
-            (task.status === "READY" || task.status === "DOING"),
+            task.visibility === "ACTIVE" && (task.status === "READY" || task.status === "DOING"),
         ),
         focus: todayTasks.filter(
           ({ item, task }) =>
-            item.section === "FOCUS" &&
-            task.visibility === "ACTIVE" &&
-            task.status === "READY",
+            item.section === "FOCUS" && task.visibility === "ACTIVE" && task.status === "READY",
         ),
         later: todayTasks.filter(
           ({ item, task }) =>
-            item.section === "LATER" &&
-            task.visibility === "ACTIVE" &&
-            task.status === "READY",
+            item.section === "LATER" && task.visibility === "ACTIVE" && task.status === "READY",
         ),
         doing,
       };
@@ -1251,11 +1305,7 @@ export class ReviewApplicationService {
     return this.dependencies.database.transaction(async (transaction) => {
       const events = await transaction.taskEvents.listAll();
       const entries: ActivityLogEntry[] = [];
-      const visibleTypes = new Set<TaskEvent["type"]>([
-        "COMPLETED",
-        "CANCELED",
-        "REVIEWED",
-      ]);
+      const visibleTypes = new Set<TaskEvent["type"]>(["COMPLETED", "CANCELED", "REVIEWED"]);
 
       for (const event of events) {
         if (!visibleTypes.has(event.type)) {
@@ -1362,10 +1412,7 @@ function isOpenTask(task: Task): boolean {
 
 function candidateTasks(tasks: readonly Task[], firstTaskId?: string): readonly Task[] {
   return tasks.filter(
-    (task) =>
-      task.status === "READY" &&
-      task.visibility === "ACTIVE" &&
-      task.id !== firstTaskId,
+    (task) => task.status === "READY" && task.visibility === "ACTIVE" && task.id !== firstTaskId,
   );
 }
 
@@ -1584,12 +1631,8 @@ export class ProjectApplicationService {
         overview,
         nextCandidates: candidateTasks(tasks, overview.nextReadyTask?.id),
         doing: overview.doingTasks,
-        waiting: tasks.filter(
-          (task) => task.status === "WAITING" && task.visibility === "ACTIVE",
-        ),
-        someday: tasks.filter(
-          (task) => isOpenTask(task) && task.visibility === "SOMEDAY",
-        ),
+        waiting: tasks.filter((task) => task.status === "WAITING" && task.visibility === "ACTIVE"),
+        someday: tasks.filter((task) => isOpenTask(task) && task.visibility === "SOMEDAY"),
         recentlyCompleted: completedSince(tasks, weekStartsAt),
         recentActivity: activity.slice(0, 8),
         structure: createProjectStructure(workPackages, tasks),

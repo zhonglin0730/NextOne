@@ -10,18 +10,13 @@ export function ProjectViewNav({ projectId }: ProjectViewNavProps) {
   const items = [
     {
       end: true,
-      label: t("project.viewOverview"),
+      label: t("project.viewBoard"),
       to: `/projects/${projectId}`,
     },
     {
       end: false,
       label: t("project.viewStructure"),
       to: `/projects/${projectId}/structure`,
-    },
-    {
-      end: false,
-      label: t("project.viewBoard"),
-      to: `/projects/${projectId}/board`,
     },
   ] as const;
 

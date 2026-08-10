@@ -26,8 +26,10 @@ export function BoardPage() {
   const { projectId } = useParams();
   const [tasks, setTasks] = useState<readonly Task[]>([]);
   const [project, setProject] = useState<Project>();
+  const [loadedProjectId, setLoadedProjectId] = useState<string | null>(null);
   const [projectNames, setProjectNames] = useState<ReadonlyMap<string, string>>(new Map());
   const [selectedTask, setSelectedTask] = useState<Task | undefined>();
+  const [selectedTaskAction, setSelectedTaskAction] = useState<"WAITING">();
   const [todayTaskIds, setTodayTaskIds] = useState<ReadonlySet<string>>(new Set());
   const [wipLimit, setWipLimit] = useState(3);
   const [error, setError] = useState("");
@@ -51,7 +53,10 @@ export function BoardPage() {
       setWipLimit(rules.wipLimit);
       setError("");
     } catch {
+      setProject(undefined);
       setError(t("common.error"));
+    } finally {
+      setLoadedProjectId(projectId ?? "");
     }
   }, [localDate, projectId, t]);
 
@@ -68,11 +73,12 @@ export function BoardPage() {
   const confirmOverride = (limit: number) =>
     window.confirm(`${t("wip.title", { limit })}\n\n${t("wip.confirm")}`);
 
-  const moveTask = async (
-    taskId: string,
-    column: BoardColumn,
-    options: { openWaitingDetails?: boolean } = {},
-  ) => {
+  const openTask = (task: Task, action?: "WAITING") => {
+    setSelectedTaskAction(action);
+    setSelectedTask(task);
+  };
+
+  const moveTask = async (taskId: string, column: BoardColumn) => {
     try {
       const current = tasks.find((task) => task.id === taskId);
 
@@ -80,10 +86,16 @@ export function BoardPage() {
         return;
       }
 
+      if (column === "WAITING") {
+        openTask(current, "WAITING");
+        return;
+      }
+
       try {
-        const updated = await taskApplicationService.moveToBoardColumn(current.id, column);
-        if (column === "WAITING" && options.openWaitingDetails) {
-          setSelectedTask(updated);
+        if (column === "DOING") {
+          await taskApplicationService.startTaskForToday(current.id, localDate, getTimeZone());
+        } else {
+          await taskApplicationService.moveToBoardColumn(current.id, column);
         }
       } catch (error) {
         if (!(error instanceof WipLimitExceededError)) {
@@ -94,14 +106,17 @@ export function BoardPage() {
           return;
         }
 
-        const updated = await taskApplicationService.moveToBoardColumn(current.id, column, {
-          allowWipOverride: true,
-        });
-        if (column === "WAITING" && options.openWaitingDetails) {
-          setSelectedTask(updated);
+        if (column === "DOING") {
+          await taskApplicationService.startTaskForToday(current.id, localDate, getTimeZone(), {
+            allowWipOverride: true,
+          });
+        } else {
+          await taskApplicationService.moveToBoardColumn(current.id, column, {
+            allowWipOverride: true,
+          });
         }
       }
-      if ((column === "WAITING" || column === "SOMEDAY") && todayTaskIds.has(current.id)) {
+      if (column === "SOMEDAY" && todayTaskIds.has(current.id)) {
         await taskApplicationService.removeFromToday(current.id, localDate);
       }
 
@@ -109,13 +124,11 @@ export function BoardPage() {
       const feedbackKey =
         column === "DOING"
           ? "board.feedback.started"
-          : column === "WAITING"
-            ? "board.feedback.waiting"
-            : column === "SOMEDAY"
-              ? "board.feedback.someday"
-              : current.status === "COMPLETED"
-                ? "board.feedback.reopened"
-                : "board.feedback.ready";
+          : column === "SOMEDAY"
+            ? "board.feedback.someday"
+            : current.status === "COMPLETED"
+              ? "board.feedback.reopened"
+              : "board.feedback.ready";
       setFeedback(t(feedbackKey, { title: current.title }));
     } catch {
       setError(t("common.error"));
@@ -190,7 +203,7 @@ export function BoardPage() {
           void transition(task, "COMPLETED");
         }
       } else {
-        void moveTask(taskId, column, { openWaitingDetails: column === "WAITING" });
+        void moveTask(taskId, column);
       }
     }
   };
@@ -201,6 +214,39 @@ export function BoardPage() {
   const projectDoingCount = visibleTasks.filter(
     (task) => task.visibility === "ACTIVE" && task.status === "DOING",
   ).length;
+  const projectPlannedTasks = visibleTasks.filter(
+    (task) => task.visibility === "ACTIVE" && task.status !== "CANCELED" && task.status !== "INBOX",
+  );
+  const projectCompletedCount = projectPlannedTasks.filter(
+    (task) => task.status === "COMPLETED",
+  ).length;
+  const projectProgress =
+    projectPlannedTasks.length === 0
+      ? 0
+      : Math.round((projectCompletedCount / projectPlannedTasks.length) * 100);
+
+  if (loadedProjectId !== (projectId ?? "")) {
+    return (
+      <section className="page board-page">
+        <div className="mini-skeleton" />
+      </section>
+    );
+  }
+
+  if (projectId !== undefined && project === undefined) {
+    return (
+      <section className="page empty-state">
+        {error.length > 0 ? (
+          <p className="page-error">{error}</p>
+        ) : (
+          <h1>{t("project.notFound")}</h1>
+        )}
+        <Link className="button button-outline" to="/projects">
+          {t("project.back")}
+        </Link>
+      </section>
+    );
+  }
 
   return (
     <section className="page board-page" aria-labelledby="board-title">
@@ -219,6 +265,12 @@ export function BoardPage() {
               : t("board.projectTitle", { name: project.name })}
           </h1>
           <p>{project === undefined ? t("board.description") : t("board.projectDescription")}</p>
+          {project === undefined ? null : (
+            <div className="project-board-outcome">
+              <span>{t("project.outcomeLabel")}</span>
+              <strong>{project.note ?? t("project.outcomeEmpty")}</strong>
+            </div>
+          )}
         </div>
         <div className="board-wip-summary">
           {projectId === undefined ? null : (
@@ -233,6 +285,29 @@ export function BoardPage() {
       </header>
 
       {projectId === undefined ? null : <ProjectViewNav projectId={projectId} />}
+
+      {projectId === undefined ? null : (
+        <section className="project-board-progress" aria-label={t("project.progressTitle")}>
+          <div>
+            <strong>{projectProgress}%</strong>
+            <span>
+              {t("project.progressCount", {
+                completed: projectCompletedCount,
+                total: projectPlannedTasks.length,
+              })}
+            </span>
+          </div>
+          <div
+            aria-valuemax={100}
+            aria-valuemin={0}
+            aria-valuenow={projectProgress}
+            className="project-board-progress-track"
+            role="progressbar"
+          >
+            <span style={{ width: `${projectProgress}%` }} />
+          </div>
+        </section>
+      )}
 
       {error.length > 0 ? <p className="page-error">{error}</p> : null}
       <ActionToast message={feedback} onDismiss={() => setFeedback("")} />
@@ -278,7 +353,7 @@ export function BoardPage() {
                       </span>
                       <button
                         className="board-card-title"
-                        onClick={() => setSelectedTask(task)}
+                        onClick={() => openTask(task)}
                         type="button"
                       >
                         {task.title}
@@ -350,24 +425,12 @@ export function BoardPage() {
                         {column === "WAITING" ? (
                           <button
                             className="board-card-follow-up-action"
-                            onClick={() => setSelectedTask(task)}
+                            onClick={() => openTask(task)}
                             type="button"
                           >
                             {task.waitingFor === undefined || task.reviewAt === undefined
                               ? t("task.setFollowUp")
                               : t("task.editFollowUp")}
-                          </button>
-                        ) : null}
-                        {(task.status === "READY" || task.status === "DOING") &&
-                        task.visibility !== "SOMEDAY" ? (
-                          <button
-                            disabled={todayTaskIds.has(task.id)}
-                            onClick={() => void addToday(task)}
-                            type="button"
-                          >
-                            {todayTaskIds.has(task.id)
-                              ? t("board.addedToday")
-                              : t("board.addToday")}
                           </button>
                         ) : null}
                         {column !== "COMPLETED" ? (
@@ -379,6 +442,13 @@ export function BoardPage() {
                               {t("board.moreActions")}
                             </summary>
                             <div>
+                              {(task.status === "READY" || task.status === "DOING") &&
+                              task.visibility !== "SOMEDAY" &&
+                              !todayTaskIds.has(task.id) ? (
+                                <button onClick={() => void addToday(task)} type="button">
+                                  {t("board.addToday")}
+                                </button>
+                              ) : null}
                               {column === "READY" || column === "DOING" ? (
                                 <button
                                   onClick={() => void moveTask(task.id, "WAITING")}
@@ -444,11 +514,7 @@ export function BoardPage() {
           <div className="board-someday-list">
             {somedayTasks.map((task) => (
               <article className="board-card" key={task.id}>
-                <button
-                  className="board-card-title"
-                  onClick={() => setSelectedTask(task)}
-                  type="button"
-                >
+                <button className="board-card-title" onClick={() => openTask(task)} type="button">
                   {task.title}
                 </button>
                 <div className="board-card-actions">
@@ -467,8 +533,13 @@ export function BoardPage() {
 
       {selectedTask === undefined ? null : (
         <TaskDrawer
-          onClose={() => setSelectedTask(undefined)}
+          initialAction={selectedTaskAction}
+          onClose={() => {
+            setSelectedTask(undefined);
+            setSelectedTaskAction(undefined);
+          }}
           onTaskChanged={(task) => {
+            setSelectedTaskAction(undefined);
             setSelectedTask(task);
             void load();
           }}
