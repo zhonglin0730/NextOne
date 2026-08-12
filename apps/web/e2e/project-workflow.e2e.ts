@@ -7,7 +7,10 @@ const taskName = "完成发布候选验收";
 
 async function createProject(page: Page): Promise<void> {
   await page.goto("/projects");
-  await page.getByRole("button", { name: "关闭项目工作流引导" }).click();
+  const dismissGuide = page.getByRole("button", { name: "关闭项目工作流引导" });
+  if (await dismissGuide.isVisible()) {
+    await dismissGuide.click();
+  }
   await page.getByRole("button", { name: /新建项目/ }).click();
 
   const dialog = page.getByRole("dialog", { name: "新建项目" });
@@ -63,29 +66,24 @@ test("project workflow stays connected from structure to board and today", async
   taskCard = page.locator(".board-column-doing .board-card").filter({ hasText: taskName });
   await taskCard.getByRole("button", { name: "完成", exact: true }).click();
 
-  const completedColumn = page.locator(".board-column-completed");
-  taskCard = completedColumn.locator(".board-card").filter({ hasText: taskName });
-  await expect(taskCard).toBeVisible();
+  const completedPool = page.locator(".project-completed-pool");
+  await completedPool.locator("summary").click();
+  await completedPool.getByRole("button", { name: new RegExp(taskName) }).click();
 
-  const sourceBox = await taskCard.locator(".board-card-drag-handle").boundingBox();
-  const targetBox = await readyColumn.locator(".board-card-list").boundingBox();
-  expect(sourceBox).not.toBeNull();
-  expect(targetBox).not.toBeNull();
-  if (sourceBox === null || targetBox === null) {
-    throw new Error("Drag source or target is not visible");
-  }
-  await page.mouse.move(sourceBox.x + sourceBox.width / 2, sourceBox.y + sourceBox.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(sourceBox.x + sourceBox.width / 2 - 8, sourceBox.y + sourceBox.height / 2, {
-    steps: 3,
-  });
-  await page.mouse.move(targetBox.x + targetBox.width / 2, targetBox.y + 80, { steps: 10 });
-  await page.mouse.up();
+  const inspector = page.locator(".project-task-inspector");
+  await expect(inspector).toContainText(taskName);
+  await inspector.locator("footer button").click();
   await expect(readyColumn.locator(".board-card").filter({ hasText: taskName })).toBeVisible();
 });
 
 test("critical pages remain usable at desktop and mobile widths", async ({ page }) => {
   const routes = ["/projects", "/today", "/inbox", "/review", "/settings/general"];
+
+  await page.goto("/projects");
+  await page.keyboard.press("Tab");
+  await expect(page.locator(".skip-link")).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(page.locator("#main-content")).toBeFocused();
 
   for (const viewport of [
     { width: 1280, height: 800 },

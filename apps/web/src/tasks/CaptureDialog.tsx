@@ -44,21 +44,31 @@ export function CaptureDialog({
   const [error, setError] = useState("");
   const [dirty, setDirty] = useState(false);
   const submittingRef = useRef(false);
+  const titleInputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
-    if (open) {
-      setTitle("");
-      setNote("");
-      setProjectId(defaultProjectId ?? "");
-      setDeadlineAt("");
-      setReviewAt("");
-      setEstimateMinutes("");
-      setEnergyLevel("");
-      setCapturedTaskId(undefined);
-      setError("");
-      setDirty(false);
-      void projectApplicationService.listProjects("ACTIVE").then(setProjects);
+    if (!open) {
+      return;
     }
+    setTitle("");
+    setNote("");
+    setProjectId(defaultProjectId ?? "");
+    setDeadlineAt("");
+    setReviewAt("");
+    setEstimateMinutes("");
+    setEnergyLevel("");
+    setCapturedTaskId(undefined);
+    setError("");
+    setDirty(false);
+    void projectApplicationService.listProjects("ACTIVE").then(setProjects);
+    const focusFrame = window.matchMedia("(hover: hover) and (pointer: fine)").matches
+      ? window.requestAnimationFrame(() => titleInputRef.current?.focus())
+      : undefined;
+    return () => {
+      if (focusFrame !== undefined) {
+        window.cancelAnimationFrame(focusFrame);
+      }
+    };
   }, [defaultDestination, defaultProjectId, open]);
 
   const requestClose = useCallback(() => {
@@ -190,14 +200,17 @@ export function CaptureDialog({
             </p>
           ) : null}
           <textarea
-            autoFocus
+            aria-label={t("task.title")}
+            autoComplete="off"
             className="capture-title-input"
+            name="capture-title"
             onChange={(event) => {
               setTitle(event.target.value);
               setDirty(true);
             }}
             onKeyDown={handleTitleKeyDown}
             placeholder={t("capture.placeholder")}
+            ref={titleInputRef}
             rows={3}
             value={title}
           />

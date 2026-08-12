@@ -2,6 +2,7 @@ import { type ReactNode, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   BrowserRouter,
+  Link,
   Navigate,
   NavLink,
   Route,
@@ -16,12 +17,12 @@ import { ProjectStructurePage } from "./projects/ProjectStructurePage";
 import { ProjectsPage } from "./projects/ProjectsPage";
 import { DailyClosePage } from "./review/DailyClosePage";
 import { ReviewCenterPage } from "./review/ReviewCenterPage";
+import { DataManagementPage } from "./settings/DataManagementPage";
+import { loadPreferences } from "./settings/preferences";
+import { SettingsPage } from "./settings/SettingsPage";
 import { SyncIndicator } from "./sync/SyncIndicator";
 import { startAutomaticSync } from "./sync/syncService";
 import { SyncStatusPage } from "./sync/SyncStatusPage";
-import { DataManagementPage } from "./settings/DataManagementPage";
-import { SettingsPage } from "./settings/SettingsPage";
-import { loadPreferences } from "./settings/preferences";
 import { CaptureDialog } from "./tasks/CaptureDialog";
 import { getCaptureContext } from "./tasks/captureContext";
 import { InboxPage } from "./tasks/InboxPage";
@@ -93,6 +94,42 @@ function NavigationIcon({ name }: { name: NavigationKey }) {
   );
 }
 
+function NavigationLinks() {
+  const { t } = useTranslation();
+
+  return (
+    <>
+      {navigation.map((item) => (
+        <NavLink
+          className={({ isActive }) => (isActive ? "nav-link nav-link-active" : "nav-link")}
+          key={item.path}
+          to={item.path}
+        >
+          <NavigationIcon name={item.key} />
+          <span className="nav-label">{t(`nav.${item.key}`)}</span>
+        </NavLink>
+      ))}
+    </>
+  );
+}
+
+function SettingsLink() {
+  const { t } = useTranslation();
+
+  return (
+    <NavLink
+      aria-label={t("nav.settings")}
+      className={({ isActive }) =>
+        isActive ? "nav-link settings-link nav-link-active" : "nav-link settings-link"
+      }
+      to="/settings/general"
+    >
+      <NavigationIcon name="settings" />
+      <span className="nav-label">{t("nav.settings")}</span>
+    </NavLink>
+  );
+}
+
 function AppShell() {
   const { t } = useTranslation();
   const location = useLocation();
@@ -115,54 +152,41 @@ function AppShell() {
 
   return (
     <div className="app-shell">
-      <aside className="sidebar">
-        <BrandLogo name={t("app.name")} />
+      <a className="skip-link" href="#main-content">
+        {t("shell.skipToContent")}
+      </a>
 
-        <nav className="primary-nav" aria-label={t("shell.primaryNavigation")}>
-          {navigation.map((item) => (
-            <NavLink
-              className={({ isActive }) => (isActive ? "nav-link nav-link-active" : "nav-link")}
-              key={item.path}
-              to={item.path}
-            >
-              <NavigationIcon name={item.key} />
-              <span className="nav-label">{t(`nav.${item.key}`)}</span>
-            </NavLink>
-          ))}
-        </nav>
-        <div className="sidebar-footer">
-          <NavLink
-            className={({ isActive }) => (isActive ? "nav-link nav-link-active" : "nav-link")}
-            to="/settings/general"
-          >
-            <NavigationIcon name="settings" />
-            <span className="nav-label">{t("nav.settings")}</span>
-          </NavLink>
-        </div>
-      </aside>
+      <header className="app-header">
+        <div className="app-header-inner">
+          <Link aria-label={t("app.name")} className="app-brand-link" to="/projects">
+            <BrandLogo name={t("app.name")} />
+          </Link>
 
-      <main className="main-content">
-        <header className="topbar">
-          <div className="topbar-inner">
-            <div className="topbar-actions">
-              <SyncIndicator />
-              {location.pathname === "/inbox" ? null : (
-                <button
-                  aria-label={t(captureLabelKey)}
-                  className="capture-button"
-                  onClick={() => setCaptureOpen(true)}
-                  type="button"
-                >
-                  <span aria-hidden="true" className="capture-icon">
-                    ＋
-                  </span>
-                  <span className="capture-label">{t(captureLabelKey)}</span>
-                </button>
-              )}
-            </div>
+          <nav className="primary-nav" aria-label={t("shell.primaryNavigation")}>
+            <NavigationLinks />
+          </nav>
+
+          <div className="app-actions">
+            <SyncIndicator />
+            {location.pathname === "/inbox" ? null : (
+              <button
+                aria-label={t(captureLabelKey)}
+                className="capture-button"
+                onClick={() => setCaptureOpen(true)}
+                type="button"
+              >
+                <span aria-hidden="true" className="capture-icon">
+                  ＋
+                </span>
+                <span className="capture-label">{t(captureLabelKey)}</span>
+              </button>
+            )}
+            <SettingsLink />
           </div>
-        </header>
+        </div>
+      </header>
 
+      <main className="main-content" id="main-content" tabIndex={-1}>
         <Routes>
           <Route element={<Navigate replace to="/projects" />} path="/" />
           <Route element={<InboxPage onOpenCapture={() => setCaptureOpen(true)} />} path="/inbox" />
@@ -180,6 +204,11 @@ function AppShell() {
           <Route element={<Navigate replace to="/projects" />} path="*" />
         </Routes>
       </main>
+
+      <nav className="mobile-nav" aria-label={t("shell.primaryNavigation")}>
+        <NavigationLinks />
+        <SettingsLink />
+      </nav>
 
       <CaptureDialog
         defaultDestination={captureContext.defaultDestination}

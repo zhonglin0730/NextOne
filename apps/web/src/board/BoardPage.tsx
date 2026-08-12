@@ -20,6 +20,7 @@ import { ProjectViewNav } from "../projects/ProjectViewNav";
 type VisibleBoardColumn = Exclude<BoardColumn, "SOMEDAY"> | "COMPLETED";
 
 const columns: readonly VisibleBoardColumn[] = ["READY", "DOING", "WAITING", "COMPLETED"];
+const projectColumns: readonly VisibleBoardColumn[] = ["DOING", "READY", "WAITING"];
 
 export function BoardPage() {
   const { t } = useTranslation();
@@ -29,7 +30,8 @@ export function BoardPage() {
   const [loadedProjectId, setLoadedProjectId] = useState<string | null>(null);
   const [projectNames, setProjectNames] = useState<ReadonlyMap<string, string>>(new Map());
   const [selectedTask, setSelectedTask] = useState<Task | undefined>();
-  const [selectedTaskAction, setSelectedTaskAction] = useState<"WAITING">();
+  const [drawerTask, setDrawerTask] = useState<Task | undefined>();
+  const [drawerTaskAction, setDrawerTaskAction] = useState<"WAITING">();
   const [todayTaskIds, setTodayTaskIds] = useState<ReadonlySet<string>>(new Set());
   const [wipLimit, setWipLimit] = useState(3);
   const [error, setError] = useState("");
@@ -48,6 +50,20 @@ export function BoardPage() {
       ]);
       setTasks(boardTasks);
       setProject(projects.find((candidate) => candidate.id === projectId));
+      setSelectedTask((current) => {
+        if (projectId === undefined) {
+          return undefined;
+        }
+
+        const projectTasks = boardTasks.filter((task) => task.projectId === projectId);
+        const currentTask = projectTasks.find((task) => task.id === current?.id);
+        return (
+          currentTask ??
+          projectTasks.find((task) => task.visibility === "ACTIVE" && task.status === "DOING") ??
+          projectTasks.find((task) => task.visibility === "ACTIVE" && task.status === "READY") ??
+          projectTasks.find((task) => task.visibility === "ACTIVE" && task.status === "WAITING")
+        );
+      });
       setProjectNames(new Map(projects.map((candidate) => [candidate.id, candidate.name])));
       setTodayTaskIds(new Set(today.planned.map(({ task }) => task.id)));
       setWipLimit(rules.wipLimit);
@@ -73,8 +89,17 @@ export function BoardPage() {
   const confirmOverride = (limit: number) =>
     window.confirm(`${t("wip.title", { limit })}\n\n${t("wip.confirm")}`);
 
-  const openTask = (task: Task, action?: "WAITING") => {
-    setSelectedTaskAction(action);
+  const openTaskEditor = (task: Task, action?: "WAITING") => {
+    setDrawerTaskAction(action);
+    setDrawerTask(task);
+    setSelectedTask(task);
+  };
+
+  const selectTask = (task: Task) => {
+    if (projectId === undefined || window.matchMedia("(max-width: 680px)").matches) {
+      openTaskEditor(task);
+      return;
+    }
     setSelectedTask(task);
   };
 
@@ -87,7 +112,7 @@ export function BoardPage() {
       }
 
       if (column === "WAITING") {
-        openTask(current, "WAITING");
+        openTaskEditor(current, "WAITING");
         return;
       }
 
@@ -224,6 +249,32 @@ export function BoardPage() {
     projectPlannedTasks.length === 0
       ? 0
       : Math.round((projectCompletedCount / projectPlannedTasks.length) * 100);
+  const displayedColumns = projectId === undefined ? columns : projectColumns;
+  const completedTasks = tasksForColumn("COMPLETED");
+
+  const runSelectedPrimaryAction = () => {
+    if (selectedTask === undefined) {
+      return;
+    }
+    if (selectedTask.status === "DOING") {
+      void transition(selectedTask, "COMPLETED");
+      return;
+    }
+    if (selectedTask.status === "COMPLETED" || selectedTask.status === "CANCELED") {
+      void moveTask(selectedTask.id, "READY");
+      return;
+    }
+    void moveTask(selectedTask.id, "DOING");
+  };
+
+  const selectedPrimaryLabel =
+    selectedTask?.status === "DOING"
+      ? t("action.COMPLETED")
+      : selectedTask?.status === "WAITING"
+        ? t("board.resumeDoing")
+        : selectedTask?.status === "COMPLETED" || selectedTask?.status === "CANCELED"
+          ? t("board.reopen")
+          : t("action.DOING");
 
   if (loadedProjectId !== (projectId ?? "")) {
     return (
@@ -249,7 +300,10 @@ export function BoardPage() {
   }
 
   return (
-    <section className="page board-page" aria-labelledby="board-title">
+    <section
+      className={`page board-page ${projectId === undefined ? "" : "project-workspace-page"}`}
+      aria-labelledby="board-title"
+    >
       <header className="page-header">
         <div>
           {projectId === undefined ? (
@@ -259,11 +313,7 @@ export function BoardPage() {
               ← {t("project.back")}
             </Link>
           )}
-          <h1 id="board-title">
-            {project === undefined
-              ? t("board.title")
-              : t("board.projectTitle", { name: project.name })}
-          </h1>
+          <h1 id="board-title">{project === undefined ? t("board.title") : project.name}</h1>
           <p>{project === undefined ? t("board.description") : t("board.projectDescription")}</p>
           {project === undefined ? null : (
             <div className="project-board-outcome">
@@ -314,7 +364,7 @@ export function BoardPage() {
       <p className="board-hint">{t("board.dragHint")}</p>
 
       <div className="board-columns">
-        {columns.map((column) => {
+        {displayedColumns.map((column) => {
           const columnTasks = tasksForColumn(column);
           return (
             <section
@@ -338,7 +388,7 @@ export function BoardPage() {
                     <article
                       className={`board-card ${
                         draggedTaskId === task.id ? "board-card-dragging" : ""
-                      }`}
+                      } ${selectedTask?.id === task.id ? "board-card-selected" : ""}`}
                       draggable
                       key={task.id}
                       onDragEnd={handleDragEnd}
@@ -353,7 +403,7 @@ export function BoardPage() {
                       </span>
                       <button
                         className="board-card-title"
-                        onClick={() => openTask(task)}
+                        onClick={() => selectTask(task)}
                         type="button"
                       >
                         {task.title}
@@ -425,7 +475,7 @@ export function BoardPage() {
                         {column === "WAITING" ? (
                           <button
                             className="board-card-follow-up-action"
-                            onClick={() => openTask(task)}
+                            onClick={() => openTaskEditor(task)}
                             type="button"
                           >
                             {task.waitingFor === undefined || task.reviewAt === undefined
@@ -500,6 +550,30 @@ export function BoardPage() {
         })}
       </div>
 
+      {projectId === undefined ? null : (
+        <details className="project-completed-pool">
+          <summary>
+            <span>
+              <strong>{t("project.completedTasks", { count: completedTasks.length })}</strong>
+              <small>{t("project.completedTasksDescription")}</small>
+            </span>
+            <span aria-hidden="true">＋</span>
+          </summary>
+          {completedTasks.length === 0 ? (
+            <p className="column-empty">{t("board.emptyColumn")}</p>
+          ) : (
+            <div className="project-completed-list">
+              {completedTasks.map((task) => (
+                <button key={task.id} onClick={() => selectTask(task)} type="button">
+                  <span>{task.title}</span>
+                  <small>{t("status.COMPLETED")}</small>
+                </button>
+              ))}
+            </div>
+          )}
+        </details>
+      )}
+
       <details className="board-someday-pool">
         <summary>
           <span>
@@ -514,7 +588,7 @@ export function BoardPage() {
           <div className="board-someday-list">
             {somedayTasks.map((task) => (
               <article className="board-card" key={task.id}>
-                <button className="board-card-title" onClick={() => openTask(task)} type="button">
+                <button className="board-card-title" onClick={() => selectTask(task)} type="button">
                   {task.title}
                 </button>
                 <div className="board-card-actions">
@@ -531,19 +605,133 @@ export function BoardPage() {
         )}
       </details>
 
-      {selectedTask === undefined ? null : (
+      {projectId === undefined ? null : selectedTask === undefined ? (
+        <aside className="project-task-inspector project-task-inspector-empty">
+          <header>
+            <span>{t("task.details")}</span>
+          </header>
+          <div>
+            <strong>{t("project.inspectorEmptyTitle")}</strong>
+            <p>{t("project.inspectorEmptyDescription")}</p>
+          </div>
+        </aside>
+      ) : (
+        <aside className="project-task-inspector" aria-labelledby="project-task-inspector-title">
+          <header>
+            <span>{t("task.details")}</span>
+            <button onClick={() => openTaskEditor(selectedTask)} type="button">
+              {t("task.editDetails")}
+            </button>
+          </header>
+          <div className="project-task-inspector-content">
+            <div
+              className={`project-task-inspector-status project-task-inspector-status-${selectedTask.status.toLowerCase()}`}
+            >
+              <i aria-hidden="true" />
+              <span>{t(`status.${selectedTask.status}`)}</span>
+            </div>
+            <h2 id="project-task-inspector-title">{selectedTask.title}</h2>
+            <p className="project-task-inspector-note">{selectedTask.note ?? t("zen.noNote")}</p>
+
+            <section className="project-task-context">
+              <span>{t("project.whyNow")}</span>
+              <strong>{t(`project.whyNowByStatus.${selectedTask.status}`)}</strong>
+              <small>{project?.note ?? t("project.outcomeEmpty")}</small>
+            </section>
+
+            <dl className="project-task-meta">
+              <div>
+                <dt>{t("task.status")}</dt>
+                <dd>{t(`status.${selectedTask.status}`)}</dd>
+              </div>
+              <div>
+                <dt>{t("task.estimate")}</dt>
+                <dd>
+                  {selectedTask.estimateMinutes === undefined
+                    ? t("common.emptyValue")
+                    : t("today.minutes", { count: selectedTask.estimateMinutes })}
+                </dd>
+              </div>
+              <div>
+                <dt>{t("nav.today")}</dt>
+                <dd>
+                  {todayTaskIds.has(selectedTask.id)
+                    ? t("task.addedToday")
+                    : t("common.emptyValue")}
+                </dd>
+              </div>
+            </dl>
+
+            {selectedTask.status !== "WAITING" ? null : (
+              <section className="project-task-waiting">
+                <span>{t("task.waitingFor")}</span>
+                <strong>{selectedTask.waitingFor ?? t("task.waitingDetailsMissing")}</strong>
+                <small>
+                  {selectedTask.reviewAt === undefined
+                    ? t("task.setFollowUp")
+                    : t("task.followUpSummary", { date: getDateOnly(selectedTask.reviewAt) })}
+                </small>
+              </section>
+            )}
+          </div>
+          <footer>
+            {selectedTask.status === "WAITING" ? (
+              <button
+                className="button button-quiet"
+                onClick={() => openTaskEditor(selectedTask)}
+                type="button"
+              >
+                {t("task.editFollowUp")}
+              </button>
+            ) : selectedTask.status === "READY" && !todayTaskIds.has(selectedTask.id) ? (
+              <button
+                className="button button-quiet"
+                onClick={() => void addToday(selectedTask)}
+                type="button"
+              >
+                {t("board.addToday")}
+              </button>
+            ) : null}
+            {selectedTask.status === "DOING" ? (
+              <>
+                <button
+                  className="button button-outline"
+                  onClick={() => void transition(selectedTask, "COMPLETED")}
+                  type="button"
+                >
+                  {t("action.COMPLETED")}
+                </button>
+                <Link className="button button-primary" to="/today">
+                  {t("zen.open")}
+                </Link>
+              </>
+            ) : (
+              <button
+                className="button button-primary"
+                onClick={runSelectedPrimaryAction}
+                type="button"
+              >
+                {selectedPrimaryLabel}
+              </button>
+            )}
+          </footer>
+        </aside>
+      )}
+
+      {drawerTask === undefined ? null : (
         <TaskDrawer
-          initialAction={selectedTaskAction}
+          initialAction={drawerTaskAction}
           onClose={() => {
-            setSelectedTask(undefined);
-            setSelectedTaskAction(undefined);
+            setDrawerTask(undefined);
+            setDrawerTaskAction(undefined);
           }}
           onTaskChanged={(task) => {
-            setSelectedTaskAction(undefined);
+            setDrawerTaskAction(undefined);
+            setDrawerTask(task);
             setSelectedTask(task);
             void load();
           }}
-          task={selectedTask}
+          task={drawerTask}
         />
       )}
     </section>

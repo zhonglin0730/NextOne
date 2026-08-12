@@ -1,5 +1,10 @@
 import "@nextone/design-tokens/tokens.css";
-import "./styles.css";
+import "./styles/foundation.css";
+import "./styles/shell.css";
+import "./styles/projects.css";
+import "./styles/tasks.css";
+import "./styles/review-settings.css";
+import "./styles/responsive.css";
 import "./i18n";
 
 import { StrictMode } from "react";

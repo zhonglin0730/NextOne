@@ -345,26 +345,12 @@ export function TodayPage() {
           <h1 id="today-title">{t("today.title")}</h1>
           <p>{t("today.description")}</p>
         </div>
-        <div className="page-header-actions">
-          <time className="date-pill" dateTime={localDate}>
-            {dateFormatter.format(new Date(`${localDate}T12:00:00`))}
-          </time>
-          {hasDailyCloseItems ? (
-            <Link className="button button-outline" to="/review/daily">
-              {t("dailyClose.open")}
-            </Link>
-          ) : null}
-        </div>
       </header>
 
       {error.length > 0 ? <p className="page-error">{error}</p> : null}
       <ActionToast message={feedback} onDismiss={() => setFeedback("")} />
 
-      {capacityTasks.length > 0 ? (
-        <DailyCapacity capacityMinutes={dailyCapacityMinutes} tasks={capacityTasks} />
-      ) : null}
-
-      <div className="today-grid">
+      <div className="today-workspace">
         <section className="today-section today-planned" aria-labelledby="commitments-title">
           <header className="section-heading">
             <div>
@@ -414,6 +400,23 @@ export function TodayPage() {
             </div>
           )}
         </section>
+
+        <aside className="today-sidebar" aria-label={t("today.dateLabel")}>
+          <section className="today-context-card">
+            <span>{t("today.dateLabel")}</span>
+            <time dateTime={localDate}>
+              {dateFormatter.format(new Date(`${localDate}T12:00:00`))}
+            </time>
+            {hasDailyCloseItems ? (
+              <Link className="button button-outline" to="/review/daily">
+                {t("dailyClose.open")}
+              </Link>
+            ) : null}
+          </section>
+          {capacityTasks.length > 0 ? (
+            <DailyCapacity capacityMinutes={dailyCapacityMinutes} tasks={capacityTasks} />
+          ) : null}
+        </aside>
       </div>
 
       {kickoffOpen ? (

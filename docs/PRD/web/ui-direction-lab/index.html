@@ -1,0 +1,723 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>NextOne UI Direction Lab</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body data-direction="a" data-theme="light">
+    <svg class="symbol-sprite" aria-hidden="true">
+      <symbol id="i-folder" viewBox="0 0 24 24">
+        <path d="M3.5 7.2h6l1.8 2h9.2v8.9a2.4 2.4 0 0 1-2.4 2.4H5.9a2.4 2.4 0 0 1-2.4-2.4V7.2Z" />
+        <path d="M3.5 9.2V5.9a2.4 2.4 0 0 1 2.4-2.4h3.7l2 2.1h4.8" />
+      </symbol>
+      <symbol id="i-today" viewBox="0 0 24 24">
+        <rect x="4" y="5.5" width="16" height="14.5" rx="2.5" />
+        <path d="M8 3.5v4M16 3.5v4M4 10h16M8.2 14.5l2.1 2.1 5-5" />
+      </symbol>
+      <symbol id="i-inbox" viewBox="0 0 24 24">
+        <path d="m5.2 5.5-2.2 9v4.2a1.8 1.8 0 0 0 1.8 1.8h14.4a1.8 1.8 0 0 0 1.8-1.8v-4.2l-2.2-9a2.5 2.5 0 0 0-2.4-2H7.6a2.5 2.5 0 0 0-2.4 2Z" />
+        <path d="M3 14.5h5l1.5 2h5l1.5-2h5" />
+      </symbol>
+      <symbol id="i-review" viewBox="0 0 24 24">
+        <path d="M20 11a8 8 0 1 0-2.3 5.7" />
+        <path d="M20 5v6h-6" />
+      </symbol>
+      <symbol id="i-settings" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="3.1" />
+        <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-1.6v-.2h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1Z" />
+      </symbol>
+      <symbol id="i-search" viewBox="0 0 24 24">
+        <circle cx="10.7" cy="10.7" r="6.2" />
+        <path d="m15.2 15.2 4.3 4.3" />
+      </symbol>
+      <symbol id="i-arrow" viewBox="0 0 24 24">
+        <path d="M5 12h13M13 7l5 5-5 5" />
+      </symbol>
+      <symbol id="i-check" viewBox="0 0 24 24">
+        <path d="m5 12.5 4.3 4.3L19 7.2" />
+      </symbol>
+      <symbol id="i-more" viewBox="0 0 24 24">
+        <circle cx="5" cy="12" r="1" fill="currentColor" stroke="none" />
+        <circle cx="12" cy="12" r="1" fill="currentColor" stroke="none" />
+        <circle cx="19" cy="12" r="1" fill="currentColor" stroke="none" />
+      </symbol>
+    </svg>
+
+    <header class="lab-bar">
+      <div class="lab-title">
+        <strong>NextOne · UI 方向实验</strong>
+        <span>桌面方向样张 · 不连接业务数据</span>
+      </div>
+      <nav class="direction-tabs" aria-label="视觉方向">
+        <button class="is-active" data-direction-button="a">
+          <span>A</span> 安静而精确 <em>低风险</em>
+        </button>
+        <button data-direction-button="b"><span>B</span> 温暖编辑感</button>
+        <button data-direction-button="ab"><span class="hybrid-code">A+B</span> 温暖而精确</button>
+        <button data-direction-button="c"><span>C</span> 结构化工作台</button>
+        <button data-direction-button="d"><span>D</span> 空间化看板</button>
+        <button data-direction-button="e"><span>E</span> 原生三栏 <em>主骨架</em></button>
+        <button data-direction-button="bp"><span>B+</span> 融合候选 <em>新</em></button>
+      </nav>
+      <button class="theme-button" id="theme-button" type="button">查看深色</button>
+    </header>
+
+    <main class="lab-stage">
+      <section class="concept concept-a" data-concept="a" aria-label="方向 A：安静而精确">
+        <aside class="a-sidebar">
+          <img src="/apps/web/public/nextone-mark.svg" alt="NextOne" />
+          <nav aria-label="样张导航">
+            <a class="is-active" href="#" aria-label="项目"><svg><use href="#i-folder" /></svg></a>
+            <a href="#" aria-label="今天"><svg><use href="#i-today" /></svg></a>
+            <a href="#" aria-label="收件箱"><svg><use href="#i-inbox" /></svg></a>
+            <a href="#" aria-label="回顾"><svg><use href="#i-review" /></svg></a>
+          </nav>
+          <a class="a-settings" href="#" aria-label="设置"><svg><use href="#i-settings" /></svg></a>
+        </aside>
+        <div class="a-shell">
+          <header class="a-topbar">
+            <div class="a-breadcrumb">项目 / 项目组合</div>
+            <div class="a-top-actions">
+              <button class="a-search"><svg><use href="#i-search" /></svg><span>搜索</span><kbd>⌘ K</kbd></button>
+              <button class="a-capture">＋ 快速记录</button>
+            </div>
+          </header>
+          <div class="a-content">
+            <header class="a-page-header">
+              <div>
+                <p class="a-kicker">PERSONAL PROJECTS</p>
+                <h1>项目</h1>
+                <p>看清结果、当前动作与真实进度。</p>
+              </div>
+              <button class="a-primary">新建项目</button>
+            </header>
+
+            <section class="a-current">
+              <div class="a-current-copy">
+                <p class="a-section-label">当前最值得推进</p>
+                <h2>NextOne 体验升级</h2>
+                <p>让个人项目从想法稳定走到完成，不再依赖记忆维持方向。</p>
+                <dl class="a-current-meta">
+                  <div><dt>已完成</dt><dd>5 / 8</dd></div>
+                  <div><dt>最近推进</dt><dd>今天 09:40</dd></div>
+                  <div><dt>本周投入</dt><dd>3h 20m</dd></div>
+                </dl>
+              </div>
+              <div class="a-next-action">
+                <span>正在进行</span>
+                <strong>统一核心流程并完成手机端验证</strong>
+                <p>预计 45 分钟 · 产品体验</p>
+                <button>继续推进 <svg><use href="#i-arrow" /></svg></button>
+              </div>
+            </section>
+
+            <section class="a-portfolio">
+              <header>
+                <div>
+                  <p class="a-section-label">项目组合</p>
+                  <h2>所有项目</h2>
+                </div>
+                <div class="a-summary"><span>2 活跃</span><span>1 已完成</span></div>
+              </header>
+              <div class="a-project-list">
+                <article class="a-project-row">
+                  <div class="a-project-index">01</div>
+                  <div class="a-project-title"><strong>NextOne 体验升级</strong><span>产品 · 体验</span></div>
+                  <div class="a-project-task"><small>正在进行</small><strong>统一核心流程并完成手机端验证</strong></div>
+                  <div class="a-progress"><span style="width: 62%"></span></div>
+                  <div class="a-percent">62%</div>
+                  <button aria-label="打开项目"><svg><use href="#i-arrow" /></svg></button>
+                </article>
+                <article class="a-project-row">
+                  <div class="a-project-index">02</div>
+                  <div class="a-project-title"><strong>家庭搬家准备</strong><span>生活 · 家庭</span></div>
+                  <div class="a-project-task"><small>正在进行</small><strong>整理书箱</strong></div>
+                  <div class="a-progress"><span style="width: 57%"></span></div>
+                  <div class="a-percent">57%</div>
+                  <button aria-label="打开项目"><svg><use href="#i-arrow" /></svg></button>
+                </article>
+                <article class="a-project-row is-complete">
+                  <div class="a-project-index">03</div>
+                  <div class="a-project-title"><strong>绿色额度子账户</strong><span>财务 · 归档</span></div>
+                  <div class="a-project-task"><small>已完成</small><strong>全部行动已经闭环</strong></div>
+                  <div class="a-progress"><span style="width: 100%"></span></div>
+                  <div class="a-percent">100%</div>
+                  <button aria-label="打开项目"><svg><use href="#i-arrow" /></svg></button>
+                </article>
+              </div>
+            </section>
+          </div>
+        </div>
+      </section>
+
+      <section class="concept concept-b" data-concept="b" aria-label="方向 B：温暖编辑感" hidden>
+        <aside class="b-sidebar">
+          <div class="b-brand">
+            <img src="/apps/web/public/nextone-mark.svg" alt="" />
+            <div><strong>NextOne</strong><span>把重要的事，往前推一步。</span></div>
+          </div>
+          <nav aria-label="样张导航">
+            <a class="is-active" href="#"><span>01</span>项目</a>
+            <a href="#"><span>02</span>今天</a>
+            <a href="#"><span>03</span>收件箱 <em>2</em></a>
+            <a href="#"><span>04</span>回顾</a>
+          </nav>
+          <div class="b-day-note">
+            <span>8月11日 · 星期二</span>
+            <p>今天只承诺真正准备推进的事。</p>
+          </div>
+          <a class="b-settings" href="#"><svg><use href="#i-settings" /></svg>偏好设置</a>
+        </aside>
+        <div class="b-shell">
+          <header class="b-topbar">
+            <span>个人项目</span>
+            <div><button class="b-search"><svg><use href="#i-search" /></svg>搜索</button><button class="b-capture">记录一件事</button></div>
+          </header>
+          <div class="b-content">
+            <header class="b-page-header">
+              <p>PROJECT JOURNAL · 08 / 2026</p>
+              <h1>让每个项目，<br />都有清楚的下一步。</h1>
+              <div class="b-intro">
+                <p>这里不展示忙碌，只展示结果、正在推进的动作，以及需要重新判断的地方。</p>
+                <button>创建新项目 <svg><use href="#i-arrow" /></svg></button>
+              </div>
+            </header>
+
+            <section class="b-feature">
+              <div class="b-feature-number">01</div>
+              <div class="b-feature-main">
+                <span class="b-caption">本周主项目</span>
+                <h2>NextOne 体验升级</h2>
+                <p>让个人项目从想法稳定走到完成，不再依赖记忆维持方向。</p>
+                <div class="b-rule"></div>
+                <span class="b-caption">此刻的下一步</span>
+                <strong class="b-task">统一核心流程并完成手机端验证</strong>
+                <button class="b-focus-button">继续推进</button>
+              </div>
+              <div class="b-feature-progress">
+                <span>PROJECT PROGRESS</span>
+                <strong>62<small>%</small></strong>
+                <div><i style="width: 62%"></i></div>
+                <p>5 项完成 · 1 项进行中 · 2 项待开始</p>
+              </div>
+            </section>
+
+            <section class="b-projects">
+              <header><h2>其他项目</h2><span>按最近推进排序</span></header>
+              <article>
+                <div class="b-project-number">02</div>
+                <div><h3>家庭搬家准备</h3><p>让搬家过程可控、从容，不在最后一周集中爆发。</p></div>
+                <div class="b-project-next"><span>现在推进</span><strong>整理书箱</strong></div>
+                <div class="b-project-percent">57%</div>
+              </article>
+              <article>
+                <div class="b-project-number">03</div>
+                <div><h3>绿色额度子账户</h3><p>完成验证、归档材料并保留后续复盘依据。</p></div>
+                <div class="b-project-next"><span>项目状态</span><strong>已完成并归档</strong></div>
+                <div class="b-project-percent">100%</div>
+              </article>
+            </section>
+          </div>
+        </div>
+      </section>
+
+      <section
+        class="concept concept-ab"
+        data-concept="ab"
+        aria-label="方向 A+B：温暖而精确"
+        hidden
+      >
+        <aside class="ab-sidebar">
+          <div class="ab-brand">
+            <img src="/apps/web/public/nextone-mark.svg" alt="" />
+            <div><strong>NextOne</strong><span>下一步</span></div>
+          </div>
+          <nav aria-label="样张导航">
+            <a class="is-active" href="#"><svg><use href="#i-folder" /></svg><span>项目</span></a>
+            <a href="#"><svg><use href="#i-today" /></svg><span>今天</span></a>
+            <a href="#"><svg><use href="#i-inbox" /></svg><span>收件箱</span><em>2</em></a>
+            <a href="#"><svg><use href="#i-review" /></svg><span>回顾</span></a>
+          </nav>
+          <div class="ab-sidebar-status">
+            <span>今天</span>
+            <strong>1 个承诺</strong>
+            <small>2 个事项待判断</small>
+          </div>
+          <a class="ab-settings" href="#"><svg><use href="#i-settings" /></svg><span>设置</span></a>
+        </aside>
+        <div class="ab-shell">
+          <header class="ab-topbar">
+            <span>8月11日 · 星期二</span>
+            <div class="ab-top-actions">
+              <button class="ab-search"><svg><use href="#i-search" /></svg>搜索</button>
+              <button class="ab-capture">＋ 记录一件事</button>
+            </div>
+          </header>
+          <div class="ab-content">
+            <header class="ab-page-header">
+              <div>
+                <p>PERSONAL PROJECTS</p>
+                <h1>项目</h1>
+                <span>看清结果、当前动作与真实进度。</span>
+              </div>
+              <button>新建项目</button>
+            </header>
+
+            <section class="ab-current">
+              <div class="ab-current-copy">
+                <span>当前最值得推进</span>
+                <h2>NextOne 体验升级</h2>
+                <p>让个人项目从想法稳定走到完成，不再依赖记忆维持方向。</p>
+                <dl>
+                  <div><dt>完成</dt><dd>5 / 8</dd></div>
+                  <div><dt>最近推进</dt><dd>今天 09:40</dd></div>
+                  <div><dt>本周投入</dt><dd>3h 20m</dd></div>
+                </dl>
+              </div>
+              <div class="ab-next">
+                <span>正在进行</span>
+                <strong>统一核心流程并完成手机端验证</strong>
+                <small>预计 45 分钟 · 产品体验</small>
+                <button>继续推进 <svg><use href="#i-arrow" /></svg></button>
+              </div>
+            </section>
+
+            <section class="ab-portfolio">
+              <header>
+                <div><span>项目组合</span><h2>所有项目</h2></div>
+                <p>2 个活跃项目 · 1 个已完成</p>
+              </header>
+              <div class="ab-project-list">
+                <article>
+                  <span class="ab-number">01</span>
+                  <div class="ab-project-name"><strong>NextOne 体验升级</strong><small>产品 · 体验</small></div>
+                  <div class="ab-project-next"><span>现在推进</span><strong>统一核心流程并完成手机端验证</strong></div>
+                  <div class="ab-project-progress"><i style="width: 62%"></i></div>
+                  <span class="ab-percent">62%</span>
+                  <button aria-label="打开项目"><svg><use href="#i-arrow" /></svg></button>
+                </article>
+                <article>
+                  <span class="ab-number">02</span>
+                  <div class="ab-project-name"><strong>家庭搬家准备</strong><small>生活 · 家庭</small></div>
+                  <div class="ab-project-next"><span>现在推进</span><strong>整理书箱</strong></div>
+                  <div class="ab-project-progress"><i style="width: 57%"></i></div>
+                  <span class="ab-percent">57%</span>
+                  <button aria-label="打开项目"><svg><use href="#i-arrow" /></svg></button>
+                </article>
+                <article class="is-complete">
+                  <span class="ab-number">03</span>
+                  <div class="ab-project-name"><strong>绿色额度子账户</strong><small>财务 · 归档</small></div>
+                  <div class="ab-project-next"><span>项目状态</span><strong>全部行动已经闭环</strong></div>
+                  <div class="ab-project-progress"><i style="width: 100%"></i></div>
+                  <span class="ab-percent">100%</span>
+                  <button aria-label="打开项目"><svg><use href="#i-arrow" /></svg></button>
+                </article>
+              </div>
+            </section>
+          </div>
+        </div>
+      </section>
+
+      <section class="concept concept-c" data-concept="c" aria-label="方向 C：结构化工作台" hidden>
+        <aside class="c-rail">
+          <img src="/apps/web/public/nextone-mark.svg" alt="NextOne" />
+          <nav aria-label="样张导航">
+            <a class="is-active" href="#"><svg><use href="#i-folder" /></svg><span>PROJECTS</span></a>
+            <a href="#"><svg><use href="#i-today" /></svg><span>TODAY</span></a>
+            <a href="#"><svg><use href="#i-inbox" /></svg><span>INBOX</span></a>
+            <a href="#"><svg><use href="#i-review" /></svg><span>REVIEW</span></a>
+          </nav>
+          <a href="#" class="c-settings"><svg><use href="#i-settings" /></svg></a>
+        </aside>
+        <div class="c-shell">
+          <header class="c-topbar">
+            <div class="c-context"><span>个人空间</span><strong>项目 / 全部</strong></div>
+            <div class="c-top-actions"><button><svg><use href="#i-search" /></svg>搜索</button><button class="c-new">＋ 新建项目</button></div>
+          </header>
+          <div class="c-content">
+            <header class="c-page-header">
+              <div><span>2 个活跃项目 · 1 个已完成</span><h1>项目<br />工作台</h1></div>
+              <p>把结果、任务状态与当前推进动作放在同一张工作台上。</p>
+            </header>
+
+            <section class="c-grid">
+              <article class="c-signal">
+                <header><span>当前推进 / 01</span><button><svg><use href="#i-more" /></svg></button></header>
+                <h2>NextOne<br />体验升级</h2>
+                <p>让个人项目从想法稳定走到完成。</p>
+                <div class="c-signal-action"><span>进行中</span><strong>统一核心流程并完成手机端验证</strong></div>
+                <button class="c-advance">继续推进 <svg><use href="#i-arrow" /></svg></button>
+              </article>
+              <article class="c-metric c-metric-progress"><span>项目进度</span><strong>62%</strong><div><i style="width:62%"></i></div><small>已完成 5 / 8 项</small></article>
+              <article class="c-metric"><span>正在推进</span><strong>01</strong><small>进行中上限 1 / 3</small></article>
+              <article class="c-metric"><span>本周专注</span><strong>3:20</strong><small>小时</small></article>
+
+              <section class="c-project-table">
+                <header><span>编号</span><span>项目 / 结果</span><span>当前动作</span><span>状态</span><span>进度</span><span></span></header>
+                <article>
+                  <span>P-001</span><div><strong>NextOne 体验升级</strong><small>产品体验形成稳定闭环</small></div><strong>统一核心流程并完成手机端验证</strong><span class="c-state">进行中</span><span>62%</span><button><svg><use href="#i-arrow" /></svg></button>
+                </article>
+                <article>
+                  <span>P-002</span><div><strong>家庭搬家准备</strong><small>搬家过程可控、从容</small></div><strong>整理书箱</strong><span class="c-state">进行中</span><span>57%</span><button><svg><use href="#i-arrow" /></svg></button>
+                </article>
+                <article class="is-done">
+                  <span>P-003</span><div><strong>绿色额度子账户</strong><small>验证完成并保留复盘依据</small></div><strong>全部行动已经闭环</strong><span class="c-state">已完成</span><span>100%</span><button><svg><use href="#i-arrow" /></svg></button>
+                </article>
+              </section>
+            </section>
+          </div>
+        </div>
+      </section>
+
+      <section class="concept concept-d" data-concept="d" aria-label="方向 D：空间化项目看板" hidden>
+        <aside class="d-rail">
+          <img src="/apps/web/public/nextone-mark.svg" alt="NextOne" />
+          <nav aria-label="样张导航">
+            <a class="is-active" href="#" aria-label="项目"><svg><use href="#i-folder" /></svg></a>
+            <a href="#" aria-label="今天"><svg><use href="#i-today" /></svg></a>
+            <a href="#" aria-label="收件箱"><svg><use href="#i-inbox" /></svg></a>
+            <a href="#" aria-label="回顾"><svg><use href="#i-review" /></svg></a>
+          </nav>
+          <a class="d-settings" href="#" aria-label="设置"><svg><use href="#i-settings" /></svg></a>
+        </aside>
+        <div class="d-shell">
+          <header class="d-topbar">
+            <div class="d-project-switcher"><span>项目</span><strong>NextOne 体验升级</strong><b>⌄</b></div>
+            <div class="d-top-actions">
+              <button><svg><use href="#i-search" /></svg>搜索</button>
+              <button class="d-capture">＋ 快速记录</button>
+            </div>
+          </header>
+          <div class="d-content">
+            <header class="d-page-header">
+              <div>
+                <p>产品体验 · 最近推进于今天 09:40</p>
+                <h1>NextOne 体验升级</h1>
+                <span>让个人项目从想法稳定走到完成，不再依赖记忆维持方向。</span>
+              </div>
+              <div class="d-page-actions"><button>项目结构</button><button class="d-primary">新建任务</button></div>
+            </header>
+
+            <section class="d-project-strip">
+              <div class="d-focus"><span>今日承诺</span><strong>统一核心流程并完成手机端验证</strong><button>进入专注</button></div>
+              <div><span>下一次回顾</span><strong>周五 17:30</strong></div>
+              <div><span>当前 WIP</span><strong>1 / 3</strong></div>
+              <div class="d-progress"><span>项目进度</span><strong>62%</strong><i><b style="width: 62%"></b></i></div>
+            </section>
+
+            <section class="d-board" aria-label="项目任务看板">
+              <div class="d-column d-doing">
+                <header><div><span>今日推进</span><strong>1</strong></div><button>＋</button></header>
+                <div class="d-card-list">
+                  <article class="d-card is-current">
+                    <div class="d-drag">⠿</div>
+                    <div class="d-card-labels"><span>核心流程</span><em>今日</em></div>
+                    <h2>统一核心流程并完成手机端验证</h2>
+                    <p>确认项目、今天、等待与回顾之间的流转。</p>
+                    <footer><small>已投入 35 分钟</small><button><svg><use href="#i-more" /></svg></button></footer>
+                  </article>
+                </div>
+                <button class="d-add-card">＋ 添加任务</button>
+              </div>
+
+              <div class="d-column d-ready">
+                <header><div><span>下一步</span><strong>2</strong></div><button>＋</button></header>
+                <div class="d-card-list">
+                  <article class="d-card">
+                    <div class="d-drag">⠿</div>
+                    <span>移动端</span>
+                    <h2>补齐移动端验收清单</h2>
+                    <p>覆盖离线、同步与窄屏交互。</p>
+                    <footer><small>45 分钟</small><button><svg><use href="#i-more" /></svg></button></footer>
+                  </article>
+                  <article class="d-card">
+                    <div class="d-drag">⠿</div>
+                    <span>发布准备</span>
+                    <h2>更新双语 README</h2>
+                    <p>补充 Web 全流程与部署说明。</p>
+                    <footer><small>30 分钟</small><button><svg><use href="#i-more" /></svg></button></footer>
+                  </article>
+                </div>
+                <button class="d-add-card">＋ 添加任务</button>
+              </div>
+
+              <div class="d-column d-waiting">
+                <header><div><span>等待外部</span><strong>1</strong></div><button>＋</button></header>
+                <div class="d-card-list">
+                  <article class="d-card">
+                    <div class="d-drag">⠿</div>
+                    <span>品牌资产</span>
+                    <h2>等待图标最终确认</h2>
+                    <p>等待对象：设计评审</p>
+                    <footer><small>8月13日跟进</small><button><svg><use href="#i-more" /></svg></button></footer>
+                  </article>
+                </div>
+                <button class="d-add-card">＋ 添加任务</button>
+              </div>
+
+            </section>
+
+            <button class="d-completed-summary">
+              <span><svg><use href="#i-check" /></svg>已完成 5 项</span>
+              <small>最近完成：工作包与任务层级重构 · 昨天</small>
+              <strong>展开</strong>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <section class="concept concept-e" data-concept="e" aria-label="方向 E：原生三栏工作台" hidden>
+        <div class="e-app">
+          <aside class="e-sidebar">
+            <div class="e-brand">
+              <img src="/apps/web/public/nextone-mark.svg" alt="" />
+              <strong>NextOne</strong>
+            </div>
+            <nav class="e-primary-nav" aria-label="样张导航">
+              <a class="is-active" href="#"><svg><use href="#i-folder" /></svg>项目</a>
+              <a href="#"><svg><use href="#i-today" /></svg>今天 <span>1</span></a>
+              <a href="#"><svg><use href="#i-inbox" /></svg>收件箱 <span>2</span></a>
+              <a href="#"><svg><use href="#i-review" /></svg>回顾</a>
+            </nav>
+            <section class="e-project-nav">
+              <header><span>项目</span><button>＋</button></header>
+              <a class="is-selected" href="#"><i></i><div><strong>NextOne 体验升级</strong><small>5 / 8 已完成</small></div></a>
+              <a href="#"><i></i><div><strong>家庭搬家准备</strong><small>4 / 7 已完成</small></div></a>
+              <a href="#"><i></i><div><strong>绿色额度子账户</strong><small>已归档</small></div></a>
+            </section>
+            <a class="e-settings" href="#"><svg><use href="#i-settings" /></svg>设置</a>
+          </aside>
+
+          <section class="e-task-pane">
+            <header class="e-pane-header">
+              <div><span>项目任务</span><strong>NextOne 体验升级</strong></div>
+              <button>＋</button>
+            </header>
+            <div class="e-search"><svg><use href="#i-search" /></svg><span>搜索这个项目</span></div>
+            <div class="e-task-groups">
+              <section>
+                <header><span>进行中</span><strong>1</strong></header>
+                <button class="e-task-row is-selected">
+                  <i></i><div><strong>统一核心流程并完成手机端验证</strong><small>核心流程 · 今日</small></div><span>›</span>
+                </button>
+              </section>
+              <section>
+                <header><span>待开始</span><strong>2</strong></header>
+                <button class="e-task-row"><i></i><div><strong>补齐移动端验收清单</strong><small>移动端 · 45 分钟</small></div><span>›</span></button>
+                <button class="e-task-row"><i></i><div><strong>更新双语 README</strong><small>发布准备 · 30 分钟</small></div><span>›</span></button>
+              </section>
+              <section>
+                <header><span>等待外部</span><strong>1</strong></header>
+                <button class="e-task-row"><i></i><div><strong>等待图标最终确认</strong><small>8月13日跟进</small></div><span>›</span></button>
+              </section>
+              <section>
+                <header><span>已完成</span><strong>2</strong></header>
+                <button class="e-task-row is-done"><i><svg><use href="#i-check" /></svg></i><div><strong>工作包与任务层级重构</strong><small>8月9日完成</small></div><span>›</span></button>
+              </section>
+            </div>
+          </section>
+
+          <section class="e-detail-pane">
+            <header class="e-detail-toolbar">
+              <span>任务详情</span>
+              <div><button>复制链接</button><button><svg><use href="#i-more" /></svg></button></div>
+            </header>
+            <div class="e-detail-content">
+              <div class="e-detail-status"><span>进行中</span><small>NextOne 体验升级 / 核心流程</small></div>
+              <h1>统一核心流程并完成手机端验证</h1>
+              <p class="e-description">确认项目、今天、等待与回顾之间的流转，让用户不需要记住状态机，也不需要在页面之间寻找任务。</p>
+
+              <aside class="e-outcome">
+                <span>项目结果</span>
+                <p>让用户无需理解状态机，也能自然完成一次个人项目闭环。</p>
+                <small>今日承诺 · 完成手机端验收并记录结论</small>
+              </aside>
+
+              <dl class="e-properties">
+                <div><dt>加入今天</dt><dd>今天</dd></div>
+                <div><dt>预计时长</dt><dd>45 分钟</dd></div>
+                <div><dt>工作包</dt><dd>核心流程</dd></div>
+                <div><dt>最近更新</dt><dd>今天 09:40</dd></div>
+              </dl>
+
+              <section class="e-checklist">
+                <header><h2>完成标准</h2><span>1 / 3</span></header>
+                <label><input type="checkbox" checked />Web 端核心流程通过</label>
+                <label><input type="checkbox" />手机端窄屏流程通过</label>
+                <label><input type="checkbox" />跨浏览器同步验证通过</label>
+              </section>
+
+              <section class="e-note">
+                <header><h2>备注</h2><button>编辑</button></header>
+                <p>重点检查开始任务后是否自动进入今日，以及等待外部任务是否保留下次跟进时间。</p>
+              </section>
+            </div>
+            <footer class="e-detail-actions">
+              <button>等待外部</button>
+              <button class="e-complete"><svg><use href="#i-check" /></svg>完成任务</button>
+              <button class="e-focus">进入专注</button>
+            </footer>
+          </section>
+        </div>
+      </section>
+
+      <section class="concept concept-bp" data-concept="bp" aria-label="方向 B+：温暖项目工作台" hidden>
+        <div class="bp-app">
+          <aside class="bp-sidebar">
+            <div class="bp-brand">
+              <img src="/apps/web/public/nextone-mark.svg" alt="" />
+              <div><strong>NextOne</strong><span>personal projects</span></div>
+            </div>
+
+            <nav class="bp-primary-nav" aria-label="样张导航">
+              <a class="is-active" href="#"><svg><use href="#i-folder" /></svg><span>项目</span></a>
+              <a href="#"><svg><use href="#i-today" /></svg><span>今天</span><small>1</small></a>
+              <a href="#"><svg><use href="#i-inbox" /></svg><span>收件箱</span><small>2</small></a>
+              <a href="#"><svg><use href="#i-review" /></svg><span>回顾</span></a>
+            </nav>
+
+            <section class="bp-project-nav">
+              <header><span>项目集</span><button aria-label="新建项目">＋</button></header>
+              <button class="is-selected"><i>01</i><div><strong>NextOne 体验升级</strong><small>产品 · 5 / 8</small></div></button>
+              <button><i>02</i><div><strong>家庭搬家准备</strong><small>生活 · 4 / 7</small></div></button>
+              <button><i>03</i><div><strong>绿色额度子账户</strong><small>财务 · 已归档</small></div></button>
+            </section>
+
+            <div class="bp-day-state">
+              <span>今天</span>
+              <strong>1 个承诺 · 45 分钟</strong>
+              <small>下一次回顾：周五 17:30</small>
+            </div>
+
+            <a class="bp-settings" href="#"><svg><use href="#i-settings" /></svg>设置</a>
+          </aside>
+
+          <section class="bp-workspace">
+            <header class="bp-topbar">
+              <div class="bp-breadcrumb"><span>项目</span><b>/</b><strong>NextOne 体验升级</strong></div>
+              <div class="bp-top-actions">
+                <button class="bp-search"><svg><use href="#i-search" /></svg>搜索 <kbd>⌘ K</kbd></button>
+                <button class="bp-capture">＋ 快速记录</button>
+              </div>
+            </header>
+
+            <div class="bp-workspace-scroll">
+              <header class="bp-project-heading">
+                <div>
+                  <p>个人项目 · 产品体验</p>
+                  <h1>NextOne 体验升级</h1>
+                  <span>让个人项目从想法稳定走到完成，不再依赖记忆维持方向。</span>
+                </div>
+                <button>项目设置</button>
+              </header>
+
+              <section class="bp-project-summary">
+                <div class="bp-outcome"><span>希望达成的结果</span><strong>用户无需理解状态机，也能自然完成一次个人项目闭环。</strong></div>
+                <div class="bp-progress"><span>项目进度</span><strong>62%</strong><i><b style="width: 62%"></b></i></div>
+              </section>
+
+              <header class="bp-viewbar">
+                <nav aria-label="项目视图"><button class="is-active">看板</button><button>结构</button><button>记录</button></nav>
+                <div><span>5 / 8 已完成</span><button>＋ 新建任务</button></div>
+              </header>
+
+              <section class="bp-board" aria-label="项目执行看板">
+                <div class="bp-lane bp-today-lane">
+                  <header><div><span>今日推进</span><strong>1</strong></div><small>只承诺真正会做的事</small></header>
+                  <article class="bp-task is-selected">
+                    <div class="bp-task-kicker"><span>核心流程</span><em>今日承诺</em></div>
+                    <h2>统一核心流程并完成手机端验证</h2>
+                    <p>确认项目、今天、等待与回顾之间的流转。</p>
+                    <footer><small>预计 45 分钟</small><span>正在进行</span></footer>
+                  </article>
+                </div>
+
+                <div class="bp-lane">
+                  <header><div><span>下一步</span><strong>2</strong></div><small>准备好后即可推进</small></header>
+                  <article class="bp-task">
+                    <div class="bp-task-kicker"><span>移动端</span></div>
+                    <h2>补齐移动端验收清单</h2>
+                    <p>覆盖离线、同步与窄屏交互。</p>
+                    <footer><small>45 分钟</small><button aria-label="更多操作"><svg><use href="#i-more" /></svg></button></footer>
+                  </article>
+                  <article class="bp-task">
+                    <div class="bp-task-kicker"><span>发布准备</span></div>
+                    <h2>更新双语 README</h2>
+                    <p>补充 Web 全流程与部署说明。</p>
+                    <footer><small>30 分钟</small><button aria-label="更多操作"><svg><use href="#i-more" /></svg></button></footer>
+                  </article>
+                  <button class="bp-add-task">＋ 添加下一步</button>
+                </div>
+
+                <div class="bp-lane bp-waiting-lane">
+                  <header><div><span>等待外部</span><strong>1</strong></div><small>到期后主动提醒</small></header>
+                  <article class="bp-task">
+                    <div class="bp-task-kicker"><span>品牌资产</span></div>
+                    <h2>等待图标最终确认</h2>
+                    <p>等待对象：设计评审</p>
+                    <footer><small>8月13日跟进</small><button aria-label="更多操作"><svg><use href="#i-more" /></svg></button></footer>
+                  </article>
+                </div>
+              </section>
+
+              <button class="bp-completed-row">
+                <span><svg><use href="#i-check" /></svg>已完成 5 项</span>
+                <small>最近完成：工作包与任务层级重构 · 昨天</small>
+                <strong>查看记录</strong>
+              </button>
+            </div>
+          </section>
+
+          <aside class="bp-inspector">
+            <header class="bp-inspector-toolbar"><span>任务详情</span><button aria-label="更多操作"><svg><use href="#i-more" /></svg></button></header>
+
+            <div class="bp-inspector-scroll">
+              <div class="bp-task-state"><i></i><span>正在进行</span><small>核心流程</small></div>
+              <h1>统一核心流程并完成手机端验证</h1>
+              <p class="bp-task-description">确认项目、今天、等待与回顾之间的流转，让用户不需要记住状态机，也不需要在页面之间寻找任务。</p>
+
+              <section class="bp-context-note">
+                <span>为何现在做</span>
+                <p>它是当前项目闭环前唯一需要验证的核心路径。</p>
+                <small>关联结果 · 用户无需理解状态机，也能自然完成项目闭环</small>
+              </section>
+
+              <section class="bp-checklist">
+                <header><h2>完成标准</h2><span>1 / 3</span></header>
+                <label><input type="checkbox" checked />Web 端核心流程通过</label>
+                <label><input type="checkbox" />手机端窄屏流程通过</label>
+                <label><input type="checkbox" />跨浏览器同步验证通过</label>
+              </section>
+
+              <details class="bp-more-details">
+                <summary><span>规划信息</span><small>今天 · 45 分钟</small></summary>
+                <dl class="bp-properties">
+                  <div><dt>今日计划</dt><dd>已加入</dd></div>
+                  <div><dt>预计时长</dt><dd>45 分钟</dd></div>
+                  <div><dt>最近推进</dt><dd>今天 09:40</dd></div>
+                </dl>
+              </details>
+
+              <details class="bp-more-details">
+                <summary><span>推进记录</span><small>1 条</small></summary>
+                <section class="bp-notes">
+                  <p>重点检查开始任务后是否自动进入今日，以及等待任务是否保留下次跟进时间。</p>
+                  <small>今天 09:40</small>
+                </section>
+              </details>
+            </div>
+
+            <footer class="bp-inspector-actions">
+              <button class="bp-done"><svg><use href="#i-check" /></svg>标记完成</button>
+              <button class="bp-focus">进入专注</button>
+            </footer>
+          </aside>
+        </div>
+      </section>
+    </main>
+
+    <script src="./lab.js"></script>
+  </body>
+</html>

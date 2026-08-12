@@ -6,11 +6,17 @@ import { Link, useNavigate } from "react-router";
 import {
   notifyTasksChanged,
   projectApplicationService,
-  taskApplicationService,
   tasksChangedEvent,
 } from "../tasks/taskService";
 import { getWeekStartsAt } from "../today/date";
 import { ProjectPortfolioOverview } from "./ProjectPortfolioOverview";
+
+const workflowSteps = [
+  ["capture", "/inbox"],
+  ["project", "/projects"],
+  ["today", "/today"],
+  ["review", "/review"],
+] as const;
 
 export function ProjectsPage() {
   const { t } = useTranslation();
@@ -27,6 +33,7 @@ export function ProjectsPage() {
     () => window.localStorage.getItem("nextone.project-workflow.dismissed") !== "1",
   );
   const createSubmittingRef = useRef(false);
+  const projectNameInputRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
     try {
@@ -46,16 +53,19 @@ export function ProjectsPage() {
   }, [load]);
 
   useEffect(() => {
-    if (!dialogOpen) {
-      return;
-    }
+    if (!dialogOpen) return;
+
+    const focusFrame = window.matchMedia("(hover: hover) and (pointer: fine)").matches
+      ? window.requestAnimationFrame(() => projectNameInputRef.current?.focus())
+      : undefined;
     const closeOnEscape = (event: globalThis.KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setDialogOpen(false);
-      }
+      if (event.key === "Escape") setDialogOpen(false);
     };
     window.addEventListener("keydown", closeOnEscape);
-    return () => window.removeEventListener("keydown", closeOnEscape);
+    return () => {
+      if (focusFrame !== undefined) window.cancelAnimationFrame(focusFrame);
+      window.removeEventListener("keydown", closeOnEscape);
+    };
   }, [dialogOpen]);
 
   const openCreate = () => {
@@ -67,9 +77,7 @@ export function ProjectsPage() {
 
   const createProject = async (event: FormEvent) => {
     event.preventDefault();
-    if (name.trim().length === 0 || createSubmittingRef.current) {
-      return;
-    }
+    if (name.trim().length === 0 || createSubmittingRef.current) return;
 
     createSubmittingRef.current = true;
     setSubmitting(true);
@@ -106,50 +114,14 @@ export function ProjectsPage() {
           <p>{t("project.dashboardDescription")}</p>
         </div>
         <div className="page-header-actions">
-          <Link className="button button-outline" to="/board">
-            {t("project.allTasksBoard")}
-          </Link>
           <button className="button button-primary" onClick={openCreate} type="button">
             ＋ {t("project.create")}
           </button>
+          <Link className="button button-quiet" to="/board">
+            {t("project.allTasksBoard")}
+          </Link>
         </div>
       </header>
-
-      {showWorkflowGuide ? (
-        <section className="project-workflow-guide" aria-labelledby="project-workflow-title">
-          <div>
-            <p className="eyebrow">{t("project.workflowEyebrow")}</p>
-            <h2 id="project-workflow-title">{t("project.workflowTitle")}</h2>
-            <p>{t("project.workflowDescription")}</p>
-          </div>
-          <ol>
-            {(
-              [
-                ["capture", "/inbox"],
-                ["board", "/board"],
-                ["today", "/today"],
-                ["review", "/review"],
-              ] as const
-            ).map(([step, to], index) => (
-              <li key={step}>
-                <Link to={to}>
-                  <span>{index + 1}</span>
-                  {t(`project.workflow.${step}`)}
-                </Link>
-              </li>
-            ))}
-          </ol>
-          <button
-            aria-label={t("project.dismissWorkflow")}
-            className="project-workflow-dismiss"
-            onClick={dismissWorkflowGuide}
-            title={t("project.dismissWorkflow")}
-            type="button"
-          >
-            ×
-          </button>
-        </section>
-      ) : null}
 
       {error.length > 0 ? <p className="page-error">{error}</p> : null}
 
@@ -167,34 +139,70 @@ export function ProjectsPage() {
           </button>
         </div>
       ) : (
-        <>
-          {needsDecisionCount > 0 ? (
-            <section
-              className="project-attention-section"
-              aria-labelledby="project-attention-title"
-            >
-              <header>
-                <div>
-                  <p className="eyebrow">{t("project.attentionEyebrow")}</p>
-                  <h2 id="project-attention-title">
-                    {t("project.decisionTitle", { count: needsDecisionCount })}
-                  </h2>
-                </div>
-                <p>{t("project.decisionDescription")}</p>
-              </header>
-              <div className="project-attention-list">
-                {attentionProjects.map(({ project }) => (
-                  <Link key={project.id} to={`/projects/${project.id}`}>
-                    <span>{project.name}</span>
-                    <strong>{t("project.decideNext")} →</strong>
-                  </Link>
-                ))}
-              </div>
-            </section>
-          ) : null}
-
+        <div className="projects-dashboard">
           <ProjectPortfolioOverview projects={projects} />
-        </>
+
+          {needsDecisionCount > 0 || showWorkflowGuide ? (
+            <aside className="projects-dashboard-aside" aria-label={t("project.dashboardTitle")}>
+              {needsDecisionCount > 0 ? (
+                <section
+                  className="project-attention-section"
+                  aria-labelledby="project-attention-title"
+                >
+                  <header>
+                    <p className="eyebrow">{t("project.attentionEyebrow")}</p>
+                    <h2 id="project-attention-title">
+                      {t("project.decisionTitle", { count: needsDecisionCount })}
+                    </h2>
+                    <p>{t("project.decisionDescription")}</p>
+                  </header>
+                  <div className="project-attention-list">
+                    {attentionProjects.map(({ project }) => (
+                      <Link key={project.id} to={`/projects/${project.id}`}>
+                        <span>{project.name}</span>
+                        <strong>{t("project.decideNext")} →</strong>
+                      </Link>
+                    ))}
+                  </div>
+                </section>
+              ) : null}
+
+              {showWorkflowGuide ? (
+                <section
+                  className="project-workflow-guide"
+                  aria-labelledby="project-workflow-title"
+                >
+                  <header>
+                    <div>
+                      <p className="eyebrow">{t("project.workflowEyebrow")}</p>
+                      <h2 id="project-workflow-title">{t("project.workflowTitle")}</h2>
+                    </div>
+                    <button
+                      aria-label={t("project.dismissWorkflow")}
+                      className="project-workflow-dismiss"
+                      onClick={dismissWorkflowGuide}
+                      title={t("project.dismissWorkflow")}
+                      type="button"
+                    >
+                      ×
+                    </button>
+                  </header>
+                  <p>{t("project.workflowDescription")}</p>
+                  <ol>
+                    {workflowSteps.map(([step, to], index) => (
+                      <li key={step}>
+                        <Link to={to}>
+                          <span>{index + 1}</span>
+                          {t(`project.workflow.${step}`)}
+                        </Link>
+                      </li>
+                    ))}
+                  </ol>
+                </section>
+              ) : null}
+            </aside>
+          ) : null}
+        </div>
       )}
 
       {dialogOpen ? (
@@ -228,9 +236,11 @@ export function ProjectsPage() {
               <label className="form-field">
                 <span>{t("project.name")}</span>
                 <input
-                  autoFocus
+                  autoComplete="off"
+                  name="project-name"
                   onChange={(event) => setName(event.target.value)}
                   placeholder={t("project.namePlaceholder")}
+                  ref={projectNameInputRef}
                   required
                   value={name}
                 />
@@ -238,6 +248,8 @@ export function ProjectsPage() {
               <label className="form-field project-note-field">
                 <span>{t("project.note")}</span>
                 <textarea
+                  autoComplete="off"
+                  name="project-note"
                   onChange={(event) => setNote(event.target.value)}
                   placeholder={t("project.notePlaceholder")}
                   rows={5}

@@ -1,60 +1,89 @@
 :root {
   color-scheme: light;
-  --nextone-color-accent: #2563eb;
-  --nextone-color-accent-strong: #1d4ed8;
-  --nextone-color-background: #f7f7f4;
-  --nextone-color-surface: #ffffff;
+
+  /* Ink and paper */
+  --nextone-color-background: #f5f4f0;
+  --nextone-color-surface: #fcfbf8;
   --nextone-color-control: #ffffff;
-  --nextone-color-text: #172033;
-  --nextone-color-text-muted: #667085;
-  --nextone-color-border: #e8e9e5;
-  --nextone-color-navigation: #fbfbf8;
-  --nextone-color-navigation-text: #667085;
-  --nextone-color-focus: #eaf0ff;
-  --nextone-color-accent-soft: color-mix(
-    in srgb,
-    var(--nextone-color-accent) 9%,
-    var(--nextone-color-surface)
-  );
-  --nextone-color-accent-border: color-mix(
-    in srgb,
-    var(--nextone-color-accent) 32%,
-    var(--nextone-color-border)
-  );
-  --nextone-color-success: #277c55;
-  --nextone-color-success-soft: color-mix(in srgb, #359b72 11%, var(--nextone-color-surface));
-  --nextone-color-success-border: color-mix(in srgb, #359b72 30%, var(--nextone-color-border));
-  --nextone-color-warning: #a45b12;
-  --nextone-color-warning-soft: color-mix(in srgb, #c58a3a 13%, var(--nextone-color-surface));
-  --nextone-color-warning-border: color-mix(in srgb, #c58a3a 32%, var(--nextone-color-border));
+  --nextone-color-surface-subtle: #efede7;
+  --nextone-color-navigation: #faf9f6;
+  --nextone-color-text: #20242b;
+  --nextone-color-text-soft: #4f5661;
+  --nextone-color-text-muted: #747981;
+  --nextone-color-border: #dfdcd4;
+  --nextone-color-border-strong: #c9c5bb;
+
+  /* One restrained product accent */
+  --nextone-color-accent: #315f9f;
+  --nextone-color-accent-strong: #264a7e;
+  --nextone-color-accent-soft: #edf2f8;
+  --nextone-color-accent-border: #b9c9dd;
+  --nextone-color-focus: #e8eef6;
+
+  /* Semantic state colors */
+  --nextone-color-success: #33765e;
+  --nextone-color-success-soft: #edf5f1;
+  --nextone-color-success-border: #bdd8cc;
+  --nextone-color-warning: #8e642d;
+  --nextone-color-warning-soft: #f8f2e8;
+  --nextone-color-warning-border: #dfcaa8;
+  --nextone-color-danger: #b64c56;
+  --nextone-color-danger-text: #963b45;
+  --nextone-color-danger-soft: #faeef0;
+  --nextone-color-danger-border: #e5bec3;
+
+  /* Typography */
   --nextone-font-sans:
-    "Segoe UI Variable Text", "Segoe UI", "PingFang SC", "HarmonyOS Sans SC", "Noto Sans SC",
-    "Microsoft YaHei UI", "Microsoft YaHei", system-ui, sans-serif;
-  --nextone-color-danger: #c43d4b;
-  --nextone-color-danger-text: #a8323f;
-  --nextone-color-danger-soft: color-mix(
-    in srgb,
-    var(--nextone-color-danger) 8%,
-    var(--nextone-color-surface)
-  );
-  --nextone-color-danger-border: color-mix(
-    in srgb,
-    var(--nextone-color-danger) 30%,
-    var(--nextone-color-border)
-  );
-  --nextone-radius-small: 8px;
-  --nextone-radius-medium: 12px;
-  --nextone-radius-large: 18px;
-  --nextone-radius-panel: 18px;
+    "Segoe UI Variable Text", "Segoe UI", "PingFang SC", "HarmonyOS Sans SC", "MiSans",
+    "Noto Sans SC", "Microsoft YaHei UI", system-ui, sans-serif;
+  --nextone-font-serif: var(--nextone-font-sans);
+  --nextone-font-size-xs: 0.75rem;
+  --nextone-font-size-sm: 0.8125rem;
+  --nextone-font-size-base: 0.9375rem;
+  --nextone-font-size-heading: 1.25rem;
+  --nextone-line-height-tight: 1.25;
+  --nextone-line-height-base: 1.6;
+
+  /* Spacing */
+  --nextone-space-2xs: 2px;
   --nextone-space-xs: 4px;
   --nextone-space-sm: 8px;
   --nextone-space-md: 16px;
   --nextone-space-lg: 24px;
   --nextone-space-xl: 32px;
-  --nextone-content-standard: 1040px;
-  --nextone-content-wide: 1180px;
-  --nextone-content-board: 1380px;
-  --nextone-control-target: 38px;
-  --nextone-shadow-card: 0 12px 36px rgb(30 40 70 / 5%);
-  --nextone-shadow-elevated: 0 18px 48px rgb(30 40 70 / 8%);
+  --nextone-space-2xl: 48px;
+  --nextone-space-3xl: 64px;
+  --nextone-space-2: 8px;
+  --nextone-space-3: 12px;
+  --nextone-space-4: 16px;
+  --nextone-space-5: 20px;
+  --nextone-space-6: 24px;
+  --nextone-space-7: 32px;
+
+  /* Geometry */
+  --nextone-radius-small: 7px;
+  --nextone-radius-medium: 10px;
+  --nextone-radius-large: 14px;
+  --nextone-radius-panel: 16px;
+  --nextone-radius-sm: var(--nextone-radius-small);
+  --nextone-radius-md: var(--nextone-radius-medium);
+  --nextone-radius-lg: var(--nextone-radius-large);
+  --nextone-control-target: 40px;
+  --nextone-touch-target: 44px;
+  --nextone-content-standard: 1000px;
+  --nextone-content-wide: 1200px;
+  --nextone-content-board: 1400px;
+  --nextone-header-height: 68px;
+
+  /* Depth and motion */
+  --nextone-shadow-card: 0 1px 2px rgb(49 45 37 / 5%);
+  --nextone-shadow-elevated: 0 20px 60px rgb(49 45 37 / 12%);
+  --nextone-shadow-xs: var(--nextone-shadow-card);
+  --nextone-shadow-sm: 0 8px 24px rgb(49 45 37 / 6%);
+  --nextone-shadow-md: 0 14px 34px rgb(49 45 37 / 10%);
+  --nextone-shadow-lg: var(--nextone-shadow-elevated);
+  --nextone-motion-fast: 140ms;
+  --nextone-motion-base: 180ms;
+  --nextone-motion-standard: var(--nextone-motion-base);
+  --nextone-ease: cubic-bezier(0.2, 0, 0, 1);
 }

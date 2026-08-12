@@ -1,0 +1,218 @@
+.app-shell {
+  min-height: 100dvh;
+}
+
+.skip-link {
+  position: fixed;
+  inset-block-start: var(--nextone-space-3);
+  inset-inline-start: var(--nextone-space-3);
+  z-index: 100;
+  transform: translateY(-160%);
+  border-radius: var(--nextone-radius-md);
+  background: var(--nextone-color-text);
+  color: var(--nextone-color-surface);
+  padding: var(--nextone-space-2) var(--nextone-space-3);
+  font-weight: 650;
+  transition: transform var(--nextone-motion-fast);
+}
+
+.skip-link:focus {
+  transform: translateY(0);
+}
+
+.app-header {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 40;
+  min-height: var(--nextone-header-height);
+  border-block-end: 1px solid var(--nextone-color-border);
+  background: color-mix(in srgb, var(--nextone-color-background) 92%, transparent);
+  backdrop-filter: blur(14px);
+}
+
+.app-header-inner {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  width: min(100% - 40px, 1400px);
+  min-height: var(--nextone-header-height);
+  margin-inline: auto;
+  gap: var(--nextone-space-5);
+}
+
+.app-brand-link,
+.primary-nav,
+.app-actions,
+.mobile-nav {
+  display: flex;
+  align-items: center;
+}
+
+.app-brand-link {
+  min-width: 132px;
+  color: var(--nextone-color-text);
+  text-decoration: none;
+}
+
+.brand-logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.brand-logo-mark {
+  display: block;
+  width: 31px;
+  height: 31px;
+  flex: 0 0 auto;
+}
+
+.brand-logo-wordmark {
+  color: var(--nextone-color-text);
+  font-size: 17px;
+  font-weight: 720;
+  letter-spacing: -0.025em;
+}
+
+.primary-nav {
+  justify-content: flex-start;
+  gap: 2px;
+}
+
+.nav-link {
+  position: relative;
+  display: inline-flex;
+  min-height: 40px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: var(--nextone-radius-md);
+  color: var(--nextone-color-text-soft);
+  padding-inline: 13px;
+  font-size: 14px;
+  font-weight: 590;
+  text-decoration: none;
+  transition:
+    background var(--nextone-motion-fast),
+    color var(--nextone-motion-fast);
+}
+
+.nav-link:hover {
+  background: var(--nextone-color-surface-subtle);
+  color: var(--nextone-color-text);
+}
+
+.nav-link-active {
+  background: var(--nextone-color-surface);
+  color: var(--nextone-color-text);
+  box-shadow: inset 0 0 0 1px var(--nextone-color-border);
+}
+
+.nav-icon {
+  display: grid;
+  width: 19px;
+  height: 19px;
+  place-items: center;
+  flex: 0 0 auto;
+}
+
+.nav-icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+.app-actions {
+  justify-content: flex-end;
+  gap: var(--nextone-space-2);
+}
+
+.app-actions > .nav-link {
+  width: 40px;
+  padding: 0;
+}
+
+.app-actions > .nav-link .nav-label {
+  position: absolute;
+  overflow: hidden;
+  width: 1px;
+  height: 1px;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.capture-button {
+  min-height: 40px;
+  gap: 7px;
+  padding-inline: 15px;
+}
+
+.capture-icon {
+  font-size: 20px;
+  font-weight: 400;
+  line-height: 1;
+}
+
+.sync-status {
+  display: inline-flex;
+  min-height: 32px;
+  align-items: center;
+  gap: 7px;
+  border: 0;
+  border-radius: var(--nextone-radius-md);
+  background: transparent;
+  color: var(--nextone-color-text-muted);
+  padding: 6px 8px;
+  cursor: pointer;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.sync-status:hover {
+  background: var(--nextone-color-surface-subtle);
+  color: var(--nextone-color-text-soft);
+}
+
+.sync-status > span[aria-hidden="true"] {
+  display: none;
+}
+
+.sync-status::before {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--nextone-color-text-muted);
+  content: "";
+}
+
+.sync-status-synced::before,
+.sync-status-online::before {
+  background: var(--nextone-color-success);
+}
+
+.sync-status-syncing::before {
+  background: var(--nextone-color-accent);
+}
+
+.sync-status-error::before,
+.sync-status-offline::before {
+  background: var(--nextone-color-danger);
+}
+
+.main-content {
+  min-width: 0;
+}
+
+.mobile-nav {
+  display: none;
+}
+
+@media (prefers-color-scheme: dark) {
+  html[data-theme="system"] .app-header {
+    background: color-mix(in srgb, var(--nextone-color-background) 90%, transparent);
+  }
+}
+
+html[data-theme="dark"] .app-header {
+  background: color-mix(in srgb, var(--nextone-color-background) 90%, transparent);
+}
