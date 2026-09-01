@@ -17,6 +17,7 @@ export const taskEventTypes = [
   "WIP_LIMIT_OVERRIDDEN",
   "PROJECT_CHANGED",
   "REVIEWED",
+  "FOCUS_SESSION_COMPLETED",
 ] as const;
 
 export type TaskEventType = (typeof taskEventTypes)[number];
@@ -29,6 +30,8 @@ export interface TaskEventMetadata {
   fromProjectId?: string;
   toProjectId?: string;
   fieldNames?: readonly string[];
+  durationMinutes?: number;
+  plannedMinutes?: number;
 }
 
 export interface TaskEvent {

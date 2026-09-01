@@ -16,7 +16,8 @@ public class TaskRepository {
     private static final String COLUMNS = """
             id, user_id, project_id, work_package_id, title, note, status, visibility,
             deadline_at, review_at, reviewed_at, waiting_for, waiting_since,
-            estimate_minutes, energy_level, sort_key, completed_at, canceled_at,
+            estimate_minutes, focus_session_count, focus_minutes, last_focused_at,
+            energy_level, sort_key, completed_at, canceled_at,
             created_at, updated_at, revision
             """;
 
@@ -31,9 +32,10 @@ public class TaskRepository {
                 INSERT INTO task (
                     id, user_id, project_id, work_package_id, title, note, status, visibility,
                     deadline_at, review_at, reviewed_at, waiting_for, waiting_since,
-                    estimate_minutes, energy_level, sort_key, completed_at, canceled_at,
+                    estimate_minutes, focus_session_count, focus_minutes, last_focused_at,
+                    energy_level, sort_key, completed_at, canceled_at,
                     created_at, updated_at, revision
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 task.id(),
                 task.userId(),
@@ -49,6 +51,9 @@ public class TaskRepository {
                 task.waitingFor(),
                 task.waitingSince(),
                 task.estimateMinutes(),
+                task.focusSessionCount(),
+                task.focusMinutes(),
+                task.lastFocusedAt(),
                 task.energyLevel() == null ? null : task.energyLevel().name(),
                 task.sortKey(),
                 task.completedAt(),
@@ -128,6 +133,9 @@ public class TaskRepository {
                     waiting_for = ?,
                     waiting_since = ?,
                     estimate_minutes = ?,
+                    focus_session_count = ?,
+                    focus_minutes = ?,
+                    last_focused_at = ?,
                     energy_level = ?,
                     sort_key = ?,
                     completed_at = ?,
@@ -148,6 +156,9 @@ public class TaskRepository {
                 task.waitingFor(),
                 task.waitingSince(),
                 task.estimateMinutes(),
+                task.focusSessionCount(),
+                task.focusMinutes(),
+                task.lastFocusedAt(),
                 task.energyLevel() == null ? null : task.energyLevel().name(),
                 task.sortKey(),
                 task.completedAt(),
@@ -179,6 +190,9 @@ public class TaskRepository {
                 resultSet.getString("waiting_for"),
                 resultSet.getObject("waiting_since", OffsetDateTime.class),
                 resultSet.getObject("estimate_minutes", Integer.class),
+                resultSet.getInt("focus_session_count"),
+                resultSet.getInt("focus_minutes"),
+                resultSet.getObject("last_focused_at", OffsetDateTime.class),
                 resultSet.getString("energy_level") == null
                         ? null
                         : EnergyLevel.valueOf(resultSet.getString("energy_level")),

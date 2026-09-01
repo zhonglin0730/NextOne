@@ -61,6 +61,52 @@ export function SettingsPage() {
         <section className="panel settings-section">
           <div className="settings-section-heading">
             <span className="settings-section-icon" aria-hidden="true">
+              ◷
+            </span>
+            <div>
+              <h2>{t("settings.focus.title")}</h2>
+              <p>{t("settings.focus.description")}</p>
+            </div>
+          </div>
+          {(
+            [
+              ["focusDurationMinutes", "duration", 5, 120],
+              ["breakDurationMinutes", "breakDuration", 1, 30],
+              ["movementReminderMinutes", "movementReminder", 15, 180],
+            ] as const
+          ).map(([key, label, minimum, maximum]) => (
+            <label className="settings-row" key={key}>
+              <span>
+                <strong>{t(`settings.focus.${label}`)}</strong>
+                <small>{t(`settings.focus.${label}Hint`)}</small>
+              </span>
+              <input
+                max={maximum}
+                min={minimum}
+                onChange={(event) =>
+                  update(key, Math.max(minimum, Math.min(maximum, Number(event.target.value))))
+                }
+                type="number"
+                value={preferences[key]}
+              />
+            </label>
+          ))}
+          <label className="settings-row">
+            <span>
+              <strong>{t("settings.focus.notifications")}</strong>
+              <small>{t("settings.focus.notificationsHint")}</small>
+            </span>
+            <input
+              checked={preferences.focusNotificationsEnabled}
+              onChange={(event) => update("focusNotificationsEnabled", event.target.checked)}
+              type="checkbox"
+            />
+          </label>
+        </section>
+
+        <section className="panel settings-section">
+          <div className="settings-section-heading">
+            <span className="settings-section-icon" aria-hidden="true">
               ◎
             </span>
             <div>

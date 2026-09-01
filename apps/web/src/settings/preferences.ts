@@ -20,6 +20,10 @@ export function createDefaultPreferences(now = new Date().toISOString()): UserPr
     focusLimit: 3,
     wipLimit: 3,
     dailyCapacityMinutes: 240,
+    focusDurationMinutes: 25,
+    breakDurationMinutes: 5,
+    movementReminderMinutes: 50,
+    focusNotificationsEnabled: true,
     staleDays: 14,
     waitingDays: 7,
     defaultSort: "MANUAL",
@@ -34,6 +38,10 @@ export async function loadPreferences(): Promise<UserPreferences> {
       return {
         ...stored,
         dailyCapacityMinutes: stored.dailyCapacityMinutes ?? 240,
+        focusDurationMinutes: stored.focusDurationMinutes ?? 25,
+        breakDurationMinutes: stored.breakDurationMinutes ?? 5,
+        movementReminderMinutes: stored.movementReminderMinutes ?? 50,
+        focusNotificationsEnabled: stored.focusNotificationsEnabled ?? true,
       };
     }
     const defaults = createDefaultPreferences();

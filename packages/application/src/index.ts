@@ -673,6 +673,56 @@ export class TaskApplicationService {
     );
   }
 
+  async recordFocusSession(
+    taskId: string,
+    durationMinutes: number,
+    plannedMinutes?: number,
+  ): Promise<Task> {
+    if (!Number.isInteger(durationMinutes) || durationMinutes < 1) {
+      throw new Error("Focus duration must be a positive integer");
+    }
+    if (plannedMinutes !== undefined && (!Number.isInteger(plannedMinutes) || plannedMinutes < 1)) {
+      throw new Error("Planned focus duration must be a positive integer");
+    }
+
+    return this.dependencies.database.transaction(async (transaction) => {
+      const current = await transaction.tasks.findById(taskId);
+      if (current === undefined) {
+        throw new Error("Task not found");
+      }
+
+      const occurredAt = this.dependencies.now();
+      const task: Task = {
+        ...current,
+        focusSessionCount: (current.focusSessionCount ?? 0) + 1,
+        focusMinutes: (current.focusMinutes ?? 0) + durationMinutes,
+        lastFocusedAt: occurredAt,
+        updatedAt: occurredAt,
+        revision: current.revision + 1,
+      };
+      const event: TaskEvent = {
+        id: this.dependencies.generateId(),
+        userId: task.userId,
+        taskId: task.id,
+        type: "FOCUS_SESSION_COMPLETED",
+        occurredAt,
+        metadata: {
+          durationMinutes,
+          ...(plannedMinutes === undefined ? {} : { plannedMinutes }),
+        },
+      };
+
+      await persistTaskMutation(
+        transaction,
+        task,
+        [event],
+        occurredAt,
+        this.dependencies.generateId,
+      );
+      return task;
+    });
+  }
+
   async updateDetails(taskId: string, input: UpdateTaskDetailsInput): Promise<Task> {
     return this.dependencies.database.transaction(async (transaction) => {
       const current = await transaction.tasks.findById(taskId);
@@ -1305,7 +1355,12 @@ export class ReviewApplicationService {
     return this.dependencies.database.transaction(async (transaction) => {
       const events = await transaction.taskEvents.listAll();
       const entries: ActivityLogEntry[] = [];
-      const visibleTypes = new Set<TaskEvent["type"]>(["COMPLETED", "CANCELED", "REVIEWED"]);
+      const visibleTypes = new Set<TaskEvent["type"]>([
+        "COMPLETED",
+        "CANCELED",
+        "REVIEWED",
+        "FOCUS_SESSION_COMPLETED",
+      ]);
 
       for (const event of events) {
         if (!visibleTypes.has(event.type)) {
@@ -1404,6 +1459,7 @@ const projectProgressEventTypes = new Set<TaskEvent["type"]>([
   "COMPLETED",
   "REOPENED",
   "PROJECT_CHANGED",
+  "FOCUS_SESSION_COMPLETED",
 ]);
 
 function isOpenTask(task: Task): boolean {

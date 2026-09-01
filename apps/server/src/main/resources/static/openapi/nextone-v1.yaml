@@ -493,6 +493,15 @@ components:
         reviewedAt:
           type: string
           format: date-time
+        focusSessionCount:
+          type: integer
+          minimum: 0
+        focusMinutes:
+          type: integer
+          minimum: 0
+        lastFocusedAt:
+          type: string
+          format: date-time
         sortKey:
           type: string
         createdAt:

@@ -56,6 +56,9 @@ export interface Task {
   waitingFor?: string;
   waitingSince?: string;
   estimateMinutes?: number;
+  focusSessionCount?: number;
+  focusMinutes?: number;
+  lastFocusedAt?: string;
   energyLevel?: EnergyLevel;
   sortKey: string;
   completedAt?: string;

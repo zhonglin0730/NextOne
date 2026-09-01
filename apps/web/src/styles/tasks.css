@@ -440,6 +440,15 @@
   line-height: 1.6;
 }
 
+.task-focus-summary {
+  margin: 0 0 var(--nextone-space-4);
+  border-block: 1px solid var(--nextone-color-border);
+  color: var(--nextone-color-text-soft);
+  padding-block: 10px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
 .task-form {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -583,8 +592,8 @@
 
 .zen-content {
   display: grid;
-  width: min(100%, 680px);
-  gap: var(--nextone-space-5);
+  width: min(100%, 720px);
+  gap: var(--nextone-space-4);
   text-align: center;
 }
 
@@ -595,23 +604,124 @@
   font-weight: 700;
 }
 
-.zen-content h1 {
+.zen-content h2 {
   margin: 0;
-  font-size: clamp(32px, 6vw, 56px);
+  font-size: clamp(30px, 5vw, 52px);
   letter-spacing: -0.045em;
 }
 
 .zen-state-hint,
 .zen-note {
+  max-width: 580px;
+  margin-inline: auto;
   color: var(--nextone-color-text-soft);
-  font-size: 16px;
+  font-size: 15px;
   line-height: 1.75;
+}
+
+.zen-session-panel,
+.zen-timer-panel {
+  display: grid;
+  justify-items: center;
+  gap: var(--nextone-space-4);
+  margin-block: var(--nextone-space-3);
+  border-block: 1px solid var(--nextone-color-border);
+  padding-block: var(--nextone-space-6);
+}
+
+.zen-session-panel h3 {
+  margin: 0 0 6px;
+  font-size: 18px;
+}
+
+.zen-session-panel p,
+.zen-timer-panel > span,
+.zen-focus-total {
+  margin: 0;
+  color: var(--nextone-color-text-muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.zen-duration-options,
+.zen-timer-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--nextone-space-2);
+}
+
+.zen-duration-option {
+  min-width: 92px;
+  min-height: 42px;
+  border: 1px solid var(--nextone-color-border);
+  border-radius: var(--nextone-radius-md);
+  background: var(--nextone-color-control);
+  color: var(--nextone-color-text-soft);
+  padding: 8px 14px;
+  cursor: pointer;
+  font: inherit;
+}
+
+.zen-duration-option[aria-pressed="true"] {
+  border-color: var(--nextone-color-accent-border);
+  background: var(--nextone-color-accent-soft);
+  color: var(--nextone-color-accent);
+  font-weight: 700;
+}
+
+.zen-duration-option:focus-visible {
+  outline: 2px solid var(--nextone-color-accent);
+  outline-offset: 2px;
+}
+
+.zen-start {
+  min-width: 180px;
+}
+
+.zen-timer-panel > strong {
+  color: var(--nextone-color-text);
+  font-size: clamp(58px, 12vw, 104px);
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+  letter-spacing: -0.055em;
+  line-height: 1;
+}
+
+.zen-recorded {
+  color: var(--nextone-color-success);
+  font-size: 13px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.zen-recovery {
+  gap: var(--nextone-space-3);
+}
+
+.zen-focus-total {
+  font-variant-numeric: tabular-nums;
 }
 
 .zen-actions {
   display: flex;
   justify-content: center;
   gap: var(--nextone-space-3);
+  padding-block-start: var(--nextone-space-2);
+}
+
+.zen-task-actions {
+  display: grid;
+  gap: var(--nextone-space-2);
+  justify-items: center;
+  padding-block-start: var(--nextone-space-2);
+}
+
+.zen-task-actions > span {
+  color: var(--nextone-color-text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
 }
 
 @media (hover: none), (pointer: coarse) {

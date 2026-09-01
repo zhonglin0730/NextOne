@@ -353,6 +353,25 @@ describe("task application service", () => {
     expect(state.outbox).toHaveLength(2);
   });
 
+  it("records focus time on the task and in its activity", async () => {
+    const state = createMemoryDatabase();
+    const service = createService(state.database);
+    const task = await service.capture({ title: "写完方案" });
+
+    const first = await service.recordFocusSession(task.id, 25, 25);
+    const second = await service.recordFocusSession(task.id, 10);
+
+    expect(first.focusSessionCount).toBe(1);
+    expect(second.focusSessionCount).toBe(2);
+    expect(second.focusMinutes).toBe(35);
+    expect(second.lastFocusedAt).toBe(second.updatedAt);
+    expect(state.events.at(-1)).toMatchObject({
+      type: "FOCUS_SESSION_COMPLETED",
+      metadata: { durationMinutes: 10 },
+    });
+    expect(state.outbox).toHaveLength(3);
+  });
+
   it("keeps a canceled task and records the decision", async () => {
     const state = createMemoryDatabase();
     const service = createService(state.database);

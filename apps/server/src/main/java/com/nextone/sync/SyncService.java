@@ -205,6 +205,9 @@ public class SyncService {
                         ? firstNonNull(incoming.waitingSince(), mutation.occurredAt())
                         : null,
                 incoming.estimateMinutes(),
+                Math.max(stored.focusSessionCount(), incoming.focusSessionCount()),
+                Math.max(stored.focusMinutes(), incoming.focusMinutes()),
+                laterNullable(stored.lastFocusedAt(), incoming.lastFocusedAt()),
                 incoming.energyLevel(),
                 incoming.sortKey(),
                 target == TaskStatus.COMPLETED
@@ -221,17 +224,31 @@ public class SyncService {
                 stored.revision() + 1
         );
         tasks.update(merged);
-        events.append(
-                userId,
-                merged.id(),
-                eventType(stored.status(), merged.status()),
-                Map.of(
-                        "fromStatus", stored.status().name(),
-                        "toStatus", merged.status().name(),
-                        "syncMerge", completionMerge
-                ),
-                mutation.occurredAt()
-        );
+        if (merged.focusSessionCount() > stored.focusSessionCount()
+                && merged.focusMinutes() > stored.focusMinutes()) {
+            events.append(
+                    userId,
+                    merged.id(),
+                    "FOCUS_SESSION_COMPLETED",
+                    Map.of(
+                            "durationMinutes", merged.focusMinutes() - stored.focusMinutes(),
+                            "syncMerge", completionMerge
+                    ),
+                    mutation.occurredAt()
+            );
+        } else {
+            events.append(
+                    userId,
+                    merged.id(),
+                    eventType(stored.status(), merged.status()),
+                    Map.of(
+                            "fromStatus", stored.status().name(),
+                            "toStatus", merged.status().name(),
+                            "syncMerge", completionMerge
+                    ),
+                    mutation.occurredAt()
+            );
+        }
         return appliedChange(
                 userId,
                 mutation,
@@ -761,6 +778,9 @@ public class SyncService {
                 source.waitingFor(),
                 source.waitingSince(),
                 source.estimateMinutes(),
+                source.focusSessionCount(),
+                source.focusMinutes(),
+                source.lastFocusedAt(),
                 source.energyLevel(),
                 source.sortKey(),
                 source.completedAt(),
@@ -926,6 +946,16 @@ public class SyncService {
 
     private OffsetDateTime later(OffsetDateTime left, OffsetDateTime right) {
         return left.isAfter(right) ? left : right;
+    }
+
+    private OffsetDateTime laterNullable(OffsetDateTime left, OffsetDateTime right) {
+        if (left == null) {
+            return right;
+        }
+        if (right == null) {
+            return left;
+        }
+        return later(left, right);
     }
 
     private OffsetDateTime firstNonNull(OffsetDateTime first, OffsetDateTime second) {

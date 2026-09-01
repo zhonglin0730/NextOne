@@ -18,9 +18,15 @@ import { DailyCapacity } from "./DailyCapacity";
 import { getLocalDate, getTimeZone } from "./date";
 import { MorningKickoff } from "./MorningKickoff";
 import { getTodayTransitionFeedbackKey, type TodayTransitionStatus } from "./transitionFeedback";
-import { ZenMode } from "./ZenMode";
+import { ZenMode, type ZenPreferences } from "./ZenMode";
 
 const defaultDailyCapacityMinutes = 240;
+const defaultZenPreferences: ZenPreferences = {
+  focusDurationMinutes: 25,
+  breakDurationMinutes: 5,
+  movementReminderMinutes: 50,
+  focusNotificationsEnabled: true,
+};
 
 function candidateRank(task: Task): number {
   return task.status === "DOING"
@@ -96,8 +102,21 @@ function TodayTaskCard({
               {task.title}
             </button>
           </h3>
-          {task.estimateMinutes === undefined ? null : (
-            <p className="task-meta">{t("today.minutes", { count: task.estimateMinutes })}</p>
+          {task.estimateMinutes === undefined && (task.focusSessionCount ?? 0) === 0 ? null : (
+            <p className="task-meta">
+              {task.estimateMinutes === undefined
+                ? null
+                : t("today.minutes", { count: task.estimateMinutes })}
+              {task.estimateMinutes !== undefined && (task.focusSessionCount ?? 0) > 0
+                ? " · "
+                : null}
+              {(task.focusSessionCount ?? 0) > 0
+                ? t("task.focusSummary", {
+                    sessions: task.focusSessionCount ?? 0,
+                    minutes: task.focusMinutes ?? 0,
+                  })
+                : null}
+            </p>
           )}
         </div>
       </div>
@@ -179,6 +198,7 @@ export function TodayPage() {
   const [dailyCapacityMinutes, setDailyCapacityMinutes] = useState(defaultDailyCapacityMinutes);
   const [focusLimit, setFocusLimit] = useState(3);
   const [wipLimit, setWipLimit] = useState(3);
+  const [zenPreferences, setZenPreferences] = useState(defaultZenPreferences);
   const [hasDailyCloseItems, setHasDailyCloseItems] = useState(false);
   const [zenTask, setZenTask] = useState<Task>();
   const [selectedTask, setSelectedTask] = useState<Task>();
@@ -203,6 +223,12 @@ export function TodayPage() {
       setDailyCapacityMinutes(preferences.dailyCapacityMinutes ?? defaultDailyCapacityMinutes);
       setFocusLimit(preferences.focusLimit);
       setWipLimit(preferences.wipLimit);
+      setZenPreferences({
+        focusDurationMinutes: preferences.focusDurationMinutes,
+        breakDurationMinutes: preferences.breakDurationMinutes,
+        movementReminderMinutes: preferences.movementReminderMinutes,
+        focusNotificationsEnabled: preferences.focusNotificationsEnabled,
+      });
       setHasDailyCloseItems(
         dailyClose.completed.length + dailyClose.unfinished.length + dailyClose.canceled.length > 0,
       );
@@ -431,7 +457,16 @@ export function TodayPage() {
       {zenTask === undefined ? null : (
         <ZenMode
           onClose={() => setZenTask(undefined)}
+          onRecordFocus={async (durationMinutes, plannedMinutes) => {
+            await taskApplicationService.recordFocusSession(
+              zenTask.id,
+              durationMinutes,
+              plannedMinutes,
+            );
+            notifyTasksChanged();
+          }}
           onTransition={(status) => transition(zenTask, status)}
+          preferences={zenPreferences}
           task={zenTask}
         />
       )}

@@ -70,12 +70,7 @@ export interface DailyPlanItemRepository {
 }
 
 export type OutboxEntityType =
-  | "TASK"
-  | "AREA"
-  | "PROJECT"
-  | "WORK_PACKAGE"
-  | "DAILY_PLAN"
-  | "DAILY_PLAN_ITEM";
+  "TASK" | "AREA" | "PROJECT" | "WORK_PACKAGE" | "DAILY_PLAN" | "DAILY_PLAN_ITEM";
 export type OutboxOperation = "UPSERT" | "DELETE";
 
 export interface OutboxMutation {
@@ -144,6 +139,10 @@ export interface UserPreferences {
   focusLimit: number;
   wipLimit: number;
   dailyCapacityMinutes: number;
+  focusDurationMinutes: number;
+  breakDurationMinutes: number;
+  movementReminderMinutes: number;
+  focusNotificationsEnabled: boolean;
   staleDays: number;
   waitingDays: number;
   defaultSort: "MANUAL" | "CREATED_AT" | "DEADLINE";

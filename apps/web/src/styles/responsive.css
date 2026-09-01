@@ -469,6 +469,29 @@
     flex-direction: column;
   }
 
+  .zen-mode {
+    align-items: start;
+    overflow-y: auto;
+    padding: 72px var(--nextone-space-4) var(--nextone-space-5);
+  }
+
+  .zen-content {
+    gap: var(--nextone-space-3);
+  }
+
+  .zen-duration-options {
+    display: grid;
+    width: 100%;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .zen-duration-option,
+  .zen-start,
+  .zen-timer-actions,
+  .zen-timer-actions .button {
+    width: 100%;
+  }
+
   .page-header-actions .button,
   .structure-page-actions .button,
   .ritual-actions .button,

@@ -339,6 +339,15 @@ export function TaskDrawer({ task, initialAction, onClose, onTaskChanged }: Task
           )}
         </div>
 
+        {(task.focusSessionCount ?? 0) > 0 ? (
+          <p className="task-focus-summary">
+            {t("task.focusSummary", {
+              sessions: task.focusSessionCount ?? 0,
+              minutes: task.focusMinutes ?? 0,
+            })}
+          </p>
+        ) : null}
+
         {isWaitingForm ? (
           <p className="waiting-workflow-hint">{t("task.waitingTodayHint")}</p>
         ) : null}
@@ -538,6 +547,14 @@ export function TaskDrawer({ task, initialAction, onClose, onTaskChanged }: Task
                   <span className="activity-dot" aria-hidden="true" />
                   <div>
                     <strong>{t(`event.${event.type}`)}</strong>
+                    {event.type === "FOCUS_SESSION_COMPLETED" &&
+                    event.metadata.durationMinutes !== undefined ? (
+                      <span>
+                        {t("task.focusEventDuration", {
+                          count: event.metadata.durationMinutes,
+                        })}
+                      </span>
+                    ) : null}
                     <time dateTime={event.occurredAt}>
                       {formatter.format(new Date(event.occurredAt))}
                     </time>
