@@ -5,6 +5,23 @@ export type SupportedLocale = (typeof supportedLocales)[number];
 export const defaultLocale: SupportedLocale = "zh-CN";
 
 export const zhCN = {
+  resume: {
+    pauseTitle: "先停在这里",
+    editTitle: "留给下次的自己",
+    label: "下次从哪里继续（选填）",
+    placeholder: "例如：接口已联调，下次补退款失败测试。",
+    help: "一句话就够。下次打开项目或任务时会看到，收尾时无需重复填写。",
+    savedLabel: "上次留下的继续点",
+    savePause: "保存并暂停",
+    skip: "直接暂停",
+    save: "保存继续点",
+    saving: "正在保存…",
+    saveError: "未能保存，输入已保留，请重试。",
+    add: "留一句下次继续点",
+    edit: "修改继续点",
+    projectTitle: "从这里接着做",
+    continue: "继续这项任务",
+  },
   app: {
     name: "NextOne",
     tagline: "下一步，更清楚",

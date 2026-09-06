@@ -46,7 +46,9 @@ class TaskServiceTest {
                 null,
                 OffsetDateTime.parse("2026-07-20T08:00:00Z"),
                 OffsetDateTime.parse("2026-07-30T08:00:00Z"),
-                3
+                3,
+                null,
+                null
         );
         when(tasks.findById("local-user", "task-1")).thenReturn(Optional.of(waiting));
 

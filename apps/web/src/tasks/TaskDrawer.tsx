@@ -12,6 +12,7 @@ import { useTranslation } from "react-i18next";
 
 import { getDateOnly, getLocalDate, getTimeZone } from "../today/date";
 import { transitionWithWipConfirmation } from "./taskActions";
+import { ResumeNote } from "./ResumeNote";
 import {
   notifyTasksChanged,
   projectApplicationService,
@@ -339,6 +340,7 @@ export function TaskDrawer({ task, initialAction, onClose, onTaskChanged }: Task
           )}
         </div>
 
+        <ResumeNote task={task} editable />
         {(task.focusSessionCount ?? 0) > 0 ? (
           <p className="task-focus-summary">
             {t("task.focusSummary", {

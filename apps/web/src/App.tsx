@@ -130,6 +130,8 @@ function SettingsLink() {
   );
 }
 
+import { ResumeNoteDialog } from "./tasks/ResumeNoteDialog";
+
 function AppShell() {
   const { t } = useTranslation();
   const location = useLocation();
@@ -210,6 +212,7 @@ function AppShell() {
         <SettingsLink />
       </nav>
 
+      <ResumeNoteDialog />
       <CaptureDialog
         defaultDestination={captureContext.defaultDestination}
         {...(captureContext.projectId === undefined

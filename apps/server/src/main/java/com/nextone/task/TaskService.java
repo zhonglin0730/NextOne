@@ -57,7 +57,9 @@ public class TaskService {
                 null,
                 now,
                 now,
-                1
+                1,
+                null,
+                null
         );
         repository.insert(task);
         events.append(userId, task.id(), "CREATED", Map.of(), now);
@@ -338,7 +340,9 @@ public class TaskService {
                 canceledAt,
                 source.createdAt(),
                 updatedAt,
-                source.revision() + 1
+                source.revision() + 1,
+                source.resumeNote(),
+                source.resumeNoteUpdatedAt()
         );
     }
 

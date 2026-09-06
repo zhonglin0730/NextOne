@@ -16,6 +16,8 @@ import {
 } from "../tasks/taskService";
 import { getDateOnly, getLocalDate, getTimeZone } from "../today/date";
 import { ProjectViewNav } from "../projects/ProjectViewNav";
+import { ResumeNote } from "../tasks/ResumeNote";
+import { requestResumeNote } from "../tasks/ResumeNoteDialog";
 
 type VisibleBoardColumn = Exclude<BoardColumn, "SOMEDAY"> | "COMPLETED";
 
@@ -113,6 +115,12 @@ export function BoardPage() {
 
       if (column === "WAITING") {
         openTaskEditor(current, "WAITING");
+        return;
+      }
+
+      if (column === "READY" && current.status === "DOING") {
+        const paused = await requestResumeNote(current.id, true);
+        if (paused) setFeedback(t("board.feedback.ready", { title: current.title }));
         return;
       }
 
@@ -361,6 +369,41 @@ export function BoardPage() {
 
       {error.length > 0 ? <p className="page-error">{error}</p> : null}
       <ActionToast message={feedback} onDismiss={() => setFeedback("")} />
+      {projectId !== undefined &&
+      tasks.some(
+        (task) =>
+          task.projectId === projectId &&
+          task.status === "READY" &&
+          task.visibility === "ACTIVE" &&
+          task.resumeNote,
+      ) ? (
+        <section className="project-resume-list" aria-labelledby="project-resume-title">
+          <h2 id="project-resume-title">{t("resume.projectTitle")}</h2>
+          {tasks
+            .filter(
+              (task) =>
+                task.projectId === projectId &&
+                task.status === "READY" &&
+                task.visibility === "ACTIVE" &&
+                task.resumeNote,
+            )
+            .map((task) => (
+              <article key={task.id}>
+                <div>
+                  <strong>{task.title}</strong>
+                  <ResumeNote task={task} editable />
+                </div>
+                <button
+                  type="button"
+                  className="button button-primary"
+                  onClick={() => void moveTask(task.id, "DOING")}
+                >
+                  {t("resume.continue")}
+                </button>
+              </article>
+            ))}
+        </section>
+      ) : null}
       <p className="board-hint">{t("board.dragHint")}</p>
 
       <div className="board-columns">
@@ -415,6 +458,7 @@ export function BoardPage() {
                             : (projectNames.get(task.projectId) ?? t("project.unknownProject"))}
                         </span>
                       ) : null}
+                      <ResumeNote task={task} compact />
                       {task.status === "WAITING" ? (
                         <p
                           className={

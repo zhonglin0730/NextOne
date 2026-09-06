@@ -3,6 +3,7 @@ import type { Task, TaskStatus } from "@nextone/domain";
 
 import { getLocalDate, getTimeZone } from "../today/date";
 import { notifyTasksChanged, taskApplicationService } from "./taskService";
+import { requestResumeNote } from "./ResumeNoteDialog";
 
 export async function transitionWithWipConfirmation(
   taskId: string,
@@ -10,6 +11,10 @@ export async function transitionWithWipConfirmation(
   confirmOverride: (limit: number) => boolean,
   notify = true,
 ): Promise<Task | undefined> {
+  if (status === "READY") {
+    const current = await taskApplicationService.findTask(taskId);
+    if (current?.status === "DOING") return requestResumeNote(taskId, true);
+  }
   const finishTransition = async (task: Task): Promise<Task> => {
     if (status === "WAITING") {
       await taskApplicationService.removeFromToday(taskId, getLocalDate());

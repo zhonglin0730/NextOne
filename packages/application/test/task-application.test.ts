@@ -289,6 +289,40 @@ function createReviewService(database: LocalDatabase) {
 }
 
 describe("task application service", () => {
+  it("keeps the continuation note with its task through pause, resume and explicit clearing", async () => {
+    const state = createMemoryDatabase();
+    const service = createService(state.database);
+    const task = await service.capture({ title: "退款联调", note: "原始需求说明" });
+    await service.startTaskForToday(task.id, "2026-09-06", "Asia/Shanghai");
+    const paused = await service.saveResumeNote(task.id, "  下次补退款失败测试  ", true);
+    expect(paused.status).toBe("READY");
+    expect(paused.resumeNote).toBe("下次补退款失败测试");
+    expect(paused.note).toBe("原始需求说明");
+    expect(paused.resumeNoteUpdatedAt).toBeDefined();
+    expect(await service.isInTodayPlan(task.id, "2026-09-06")).toBe(true);
+    const resumed = await service.startTaskForToday(task.id, "2026-09-07", "Asia/Shanghai");
+    expect(resumed.resumeNote).toBe(paused.resumeNote);
+    const cleared = await service.saveResumeNote(task.id, "");
+    expect(cleared.resumeNote).toBe("");
+    expect(cleared.resumeNoteUpdatedAt).toBeDefined();
+    expect(state.outbox.at(-1)?.payload).toMatchObject({
+      resumeNote: "",
+      resumeNoteUpdatedAt: cleared.resumeNoteUpdatedAt,
+    });
+  });
+
+  it("does not change the task when a stale pause request arrives", async () => {
+    const state = createMemoryDatabase();
+    const service = createService(state.database);
+    const task = await service.capture({ title: "已完成事项" });
+    await service.transition(task.id, "READY");
+    await service.transition(task.id, "COMPLETED");
+    const outboxCount = state.outbox.length;
+    await expect(service.saveResumeNote(task.id, "不应保存", true)).rejects.toThrow();
+    expect((await service.findTask(task.id))?.resumeNote).toBeUndefined();
+    expect(state.outbox).toHaveLength(outboxCount);
+    await expect(service.saveResumeNote(task.id, "x".repeat(1001))).rejects.toThrow();
+  });
   it("atomically captures a task, its event, and an outbox mutation", async () => {
     const state = createMemoryDatabase();
     const service = createService(state.database);

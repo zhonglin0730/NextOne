@@ -71,7 +71,9 @@ class ReviewServiceTest {
                 null,
                 created,
                 OffsetDateTime.parse(updatedAt),
-                2
+                2,
+                null,
+                null
         );
     }
 }

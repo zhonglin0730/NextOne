@@ -29,8 +29,16 @@ Product and development documentation is available in `docs/`.
 3. Starting a task adds it to Today automatically; tasks can also be planned
    into Today before they are started.
 4. Complete, pause, or mark work as waiting so progress and blockers stay true.
-5. Use Daily Close and periodic reviews to handle waiting, stalled, and
-   no-actionable-work projects.
+5. Optionally leave a short continuation note when pausing. Reopen the project
+   and choose a task to pick up where you left off.
+6. Use Daily Close and periodic reviews to handle waiting, stalled, and
+   no-actionable-work projects, reusing existing continuation notes.
+
+Web focus mode includes a Pomodoro timer, short breaks, movement reminders,
+and per-task focus totals. Optional user-written continuation notes retain their
+edit time and sync with tasks. They do not create tasks or rank projects.
+Continuing a task starts it and adds it to Today. Canceling leaves the task unchanged;
+pausing without editing preserves its note. Save an empty note to clear it.
 
 ## Local Requirements
 

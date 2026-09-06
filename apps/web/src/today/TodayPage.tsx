@@ -6,6 +6,7 @@ import { Link } from "react-router";
 
 import { ActionToast } from "../components/ActionToast";
 import { TaskDrawer } from "../tasks/TaskDrawer";
+import { ResumeNote } from "../tasks/ResumeNote";
 import { transitionWithWipConfirmation } from "../tasks/taskActions";
 import {
   notifyTasksChanged,
@@ -102,6 +103,7 @@ function TodayTaskCard({
               {task.title}
             </button>
           </h3>
+          <ResumeNote task={task} />
           {task.estimateMinutes === undefined && (task.focusSessionCount ?? 0) === 0 ? null : (
             <p className="task-meta">
               {task.estimateMinutes === undefined
@@ -260,10 +262,7 @@ export function TodayPage() {
       return false;
     }
     try {
-      const updated =
-        status === "READY" && task.status === "DOING"
-          ? await taskApplicationService.pauseAndKeepToday(task.id, localDate, getTimeZone())
-          : await transitionWithWipConfirmation(task.id, status, confirmOverride);
+      const updated = await transitionWithWipConfirmation(task.id, status, confirmOverride);
       if (status === "READY" && task.status === "DOING") {
         notifyTasksChanged();
       }

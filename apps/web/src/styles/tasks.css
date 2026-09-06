@@ -1,3 +1,100 @@
+.resume-note-dialog {
+  width: min(calc(100% - var(--nextone-space-xl)), 32rem);
+  max-height: calc(100dvh - var(--nextone-space-xl));
+  overflow-y: auto;
+  border: 1px solid var(--nextone-color-border-strong);
+  border-radius: var(--nextone-radius-large);
+  padding: var(--nextone-space-lg);
+  color: var(--nextone-color-text);
+  background: var(--nextone-color-surface);
+  box-shadow: var(--nextone-shadow-elevated);
+}
+.resume-note-dialog::backdrop {
+  background: color-mix(in srgb, var(--nextone-color-text) 35%, transparent);
+}
+.resume-note-dialog h2 {
+  margin: 0;
+  font-size: var(--nextone-font-size-heading);
+}
+.resume-note-dialog textarea {
+  width: 100%;
+  resize: vertical;
+}
+.resume-note-dialog footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--nextone-space-sm);
+  margin-top: var(--nextone-space-lg);
+}
+.resume-note-dialog button {
+  min-height: var(--nextone-touch-target);
+}
+.resume-help {
+  margin-block-start: var(--nextone-space-md);
+}
+.resume-task-name {
+  overflow-wrap: anywhere;
+  margin-block: var(--nextone-space-sm) var(--nextone-space-lg);
+}
+.resume-help,
+.resume-note-label,
+.resume-note time {
+  color: var(--nextone-color-text-soft);
+  font-size: var(--nextone-font-size-sm);
+}
+.resume-note {
+  min-width: 0;
+  margin-block: var(--nextone-space-sm);
+  text-align: start;
+}
+.resume-note p {
+  margin: var(--nextone-space-xs) 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.resume-note time {
+  display: block;
+}
+.resume-note-compact p {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+.resume-note button {
+  padding-inline: 0;
+  min-height: var(--nextone-touch-target);
+}
+.project-resume-list {
+  grid-column: 1 / -1;
+  margin-block: var(--nextone-space-md);
+  border-block: 1px solid var(--nextone-color-border);
+  padding-block: var(--nextone-space-md);
+}
+.project-resume-list h2 {
+  font-size: var(--nextone-font-size-heading);
+  margin: 0;
+}
+.project-resume-list article {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--nextone-space-md);
+  padding-block: var(--nextone-space-md);
+}
+.project-resume-list article + article {
+  border-top: 1px solid var(--nextone-color-border);
+}
+.project-resume-list article > div {
+  min-width: 0;
+  flex: 1 1 16rem;
+}
+.project-resume-list article > button {
+  min-height: var(--nextone-touch-target);
+}
+
 .today-page,
 .inbox-page {
   width: min(100% - 48px, 1060px);

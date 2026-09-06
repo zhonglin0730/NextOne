@@ -48,6 +48,8 @@ export interface Task {
   workPackageId?: string;
   title: string;
   note?: string;
+  resumeNote?: string;
+  resumeNoteUpdatedAt?: string;
   status: TaskStatus;
   visibility: TaskVisibility;
   deadlineAt?: string;

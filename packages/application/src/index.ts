@@ -673,6 +673,34 @@ export class TaskApplicationService {
     );
   }
 
+  async saveResumeNote(taskId: string, note: string, pause = false): Promise<Task> {
+    const resumeNote = note.trim();
+    if (resumeNote.length > 1000) throw new Error("Resume note is too long");
+    return this.dependencies.database.transaction(async (transaction) => {
+      const current = await transaction.tasks.findById(taskId);
+      if (current === undefined) throw new Error("Task not found");
+      if (pause && current.status !== "DOING") {
+        throw new InvalidTaskTransitionError(current.status, "READY");
+      }
+      let task = current;
+      if (resumeNote !== (current.resumeNote ?? "")) {
+        const occurredAt = this.dependencies.now();
+        task = {
+          ...current,
+          resumeNote,
+          resumeNoteUpdatedAt: occurredAt,
+          updatedAt: occurredAt,
+          revision: current.revision + 1,
+        };
+        await persistTaskMutation(transaction, task, [], occurredAt, this.dependencies.generateId);
+      }
+      // Save the handoff and pause in one local transaction; a failed pause must not save half.
+      return pause
+        ? transitionTaskInTransaction(transaction, this.dependencies, taskId, "READY")
+        : task;
+    });
+  }
+
   async recordFocusSession(
     taskId: string,
     durationMinutes: number,

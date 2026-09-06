@@ -496,6 +496,14 @@ components:
         focusSessionCount:
           type: integer
           minimum: 0
+        resumeNote:
+          type: string
+          maxLength: 1000
+          description: User-written context for the next work session. Empty string clears it.
+        resumeNoteUpdatedAt:
+          type: string
+          format: date-time
+          description: Last edit time, retained when the note is cleared.
         focusMinutes:
           type: integer
           minimum: 0

@@ -322,7 +322,7 @@ class NextOnePostgresIntegrationTest {
                 taskPayload(taskId, "Original title", "INBOX", 1, null)
         );
         JsonNode created = push(createMutation);
-        assertThat(created.at("/results/0/status").asString()).isEqualTo("APPLIED");
+        assertThat(created.at("/results/0/status").asString()).withFailMessage(created.toString()).isEqualTo("APPLIED");
         assertThat(created.at("/results/0/revision").asLong()).isEqualTo(1);
 
         JsonNode replayed = push(createMutation);
@@ -472,6 +472,43 @@ class NextOnePostgresIntegrationTest {
                 baseRevision,
                 payload == null ? "null" : payload
         );
+    }
+
+    @Test
+    @Order(8)
+    void syncsContinuationNotesWithoutOldClientsErasingThem() throws Exception {
+        String id = "resume-note-task";
+        assertThat(push(mutationJson("resume-create", id, "UPSERT", 0,
+                taskPayload(id, "Resume test", "INBOX", 1, null)))
+                .at("/results/0/status").asString()).isEqualTo("APPLIED");
+        var payload = (tools.jackson.databind.node.ObjectNode) jsonMapper.readTree(
+                taskPayload(id, "Resume test", "READY", 2, null));
+        payload.put("resumeNote", "Next: test refund failures");
+        payload.put("resumeNoteUpdatedAt", "2026-09-06T10:00:00Z");
+        JsonNode saved = push(mutationJson("resume-save", id, "UPSERT", 1, payload.toString()));
+        assertThat(saved.at("/results/0/status").asString()).isEqualTo("APPLIED");
+        assertThat(jdbcTemplate.queryForObject("SELECT resume_note FROM task WHERE id = ?", String.class, id))
+                .isEqualTo("Next: test refund failures");
+
+        JsonNode oldClient = push(mutationJson("resume-old-client", id, "UPSERT", 2,
+                taskPayload(id, "Resume test edited", "READY", 3, null)));
+        assertThat(oldClient.at("/results/0/status").asString()).withFailMessage(oldClient.toString()).isEqualTo("APPLIED");
+        assertThat(oldClient.at("/results/0/serverPayload/resumeNote").asString())
+                .isEqualTo("Next: test refund failures");
+
+        payload.put("resumeNote", "");
+        payload.put("resumeNoteUpdatedAt", "2026-09-06T11:00:00Z");
+        payload.put("revision", 4);
+        JsonNode cleared = push(mutationJson("resume-clear", id, "UPSERT", 3, payload.toString()));
+        assertThat(cleared.at("/results/0/status").asString()).isEqualTo("APPLIED");
+        assertThat(cleared.at("/results/0/serverPayload/resumeNote").asString()).isEmpty();
+        JsonNode retained = push(mutationJson("resume-clear-old-client", id, "UPSERT", 4,
+                taskPayload(id, "Resume test edited", "READY", 5, null)));
+        assertThat(retained.at("/results/0/serverPayload/resumeNote").asString()).isEmpty();
+        assertThat(retained.at("/results/0/serverPayload/resumeNoteUpdatedAt").asString())
+                .contains("2026-09-06T11:00");
+        JsonNode pulled = jsonMapper.readTree(send("GET", "/api/v1/sync/pull?cursor=0&limit=100", null, "test-access-token").body());
+        assertThat(pulled.toString()).contains("Next: test refund failures", "resumeNoteUpdatedAt");
     }
 
     private String taskPayload(

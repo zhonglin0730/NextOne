@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 
 import type { TodayTransitionStatus } from "./transitionFeedback";
 import { addFocusedMinutes, resetFocusedMinutes } from "./focusReminder";
+import { ResumeNote } from "../tasks/ResumeNote";
 
 type ZenPhase = "SETUP" | "FOCUS" | "RECOVERY" | "BREAK";
 
@@ -35,6 +36,7 @@ export function ZenMode({ task, preferences, onClose, onRecordFocus, onTransitio
   const startedAtRef = useRef(0);
   const elapsedBeforeStartRef = useRef(0);
   const finishingRef = useRef(false);
+  const sessionRecordedRef = useRef(false);
   const exitHandlerRef = useRef<() => void>(() => onClose());
   const [phase, setPhase] = useState<ZenPhase>("SETUP");
   const [selectedMinutes, setSelectedMinutes] = useState<number | null>(
@@ -85,6 +87,7 @@ export function ZenMode({ task, preferences, onClose, onRecordFocus, onTransitio
   };
 
   const startClock = (nextPhase: Extract<ZenPhase, "FOCUS" | "BREAK">) => {
+    sessionRecordedRef.current = false;
     requestNotifications();
     setPhase(nextPhase);
     setElapsedSeconds(0);
@@ -95,7 +98,9 @@ export function ZenMode({ task, preferences, onClose, onRecordFocus, onTransitio
   };
 
   const persistFocus = async (durationMinutes: number, plannedMinutes?: number) => {
+    if (sessionRecordedRef.current) return;
     await onRecordFocus(durationMinutes, plannedMinutes);
+    sessionRecordedRef.current = true;
     const reminder = addFocusedMinutes(durationMinutes, preferences.movementReminderMinutes);
     setMovementDue(reminder.movementDue);
     setRecordedMinutes(durationMinutes);
@@ -215,14 +220,24 @@ export function ZenMode({ task, preferences, onClose, onRecordFocus, onTransitio
     if (submitting) return;
     setSubmitting(true);
     setFailed(false);
+    const wasRunning = running;
+    elapsedBeforeStartRef.current = elapsedSeconds;
+    setRunning(false);
     try {
+      // Confirm the optional handoff first. Canceling must not record a focus session.
+      if (status === "READY" && !(await onTransition(status))) {
+        startedAtRef.current = Date.now();
+        setRunning(wasRunning);
+        setSubmitting(false);
+        return;
+      }
       if (phase === "FOCUS" && elapsedSeconds >= 60) {
         await persistFocus(
           Math.max(1, Math.round(elapsedSeconds / 60)),
           selectedMinutes ?? undefined,
         );
       }
-      if (await onTransition(status)) onClose();
+      if (status === "READY" || (await onTransition(status))) onClose();
       else setSubmitting(false);
     } catch {
       setFailed(true);
@@ -374,6 +389,7 @@ export function ZenMode({ task, preferences, onClose, onRecordFocus, onTransitio
           </div>
         ) : null}
 
+        <ResumeNote task={task} />
         {task.note === undefined ? (
           <p className="zen-note">{t("zen.noNote")}</p>
         ) : (

@@ -18,7 +18,7 @@ public class TaskRepository {
             deadline_at, review_at, reviewed_at, waiting_for, waiting_since,
             estimate_minutes, focus_session_count, focus_minutes, last_focused_at,
             energy_level, sort_key, completed_at, canceled_at,
-            created_at, updated_at, revision
+            created_at, updated_at, revision, resume_note, resume_note_updated_at
             """;
 
     private final JdbcTemplate jdbcTemplate;
@@ -34,8 +34,8 @@ public class TaskRepository {
                     deadline_at, review_at, reviewed_at, waiting_for, waiting_since,
                     estimate_minutes, focus_session_count, focus_minutes, last_focused_at,
                     energy_level, sort_key, completed_at, canceled_at,
-                    created_at, updated_at, revision
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    created_at, updated_at, revision, resume_note, resume_note_updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 task.id(),
                 task.userId(),
@@ -60,7 +60,9 @@ public class TaskRepository {
                 task.canceledAt(),
                 task.createdAt(),
                 task.updatedAt(),
-                task.revision()
+                task.revision(),
+                task.resumeNote(),
+                task.resumeNoteUpdatedAt()
         );
     }
 
@@ -141,7 +143,9 @@ public class TaskRepository {
                     completed_at = ?,
                     canceled_at = ?,
                     updated_at = ?,
-                    revision = ?
+                    revision = ?,
+                    resume_note = ?,
+                    resume_note_updated_at = ?
                 WHERE user_id = ? AND id = ? AND revision = ? AND deleted_at IS NULL
                 """,
                 task.projectId(),
@@ -165,6 +169,8 @@ public class TaskRepository {
                 task.canceledAt(),
                 task.updatedAt(),
                 task.revision(),
+                task.resumeNote(),
+                task.resumeNoteUpdatedAt(),
                 task.userId(),
                 task.id(),
                 task.revision() - 1
@@ -201,7 +207,9 @@ public class TaskRepository {
                 resultSet.getObject("canceled_at", OffsetDateTime.class),
                 resultSet.getObject("created_at", OffsetDateTime.class),
                 resultSet.getObject("updated_at", OffsetDateTime.class),
-                resultSet.getLong("revision")
+                resultSet.getLong("revision"),
+                resultSet.getString("resume_note"),
+                resultSet.getObject("resume_note_updated_at", OffsetDateTime.class)
         );
     }
 }

@@ -26,6 +26,8 @@ public record TaskView(
         OffsetDateTime canceledAt,
         OffsetDateTime createdAt,
         OffsetDateTime updatedAt,
-        long revision
+        long revision,
+        String resumeNote,
+        OffsetDateTime resumeNoteUpdatedAt
 ) {
 }

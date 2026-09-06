@@ -133,6 +133,9 @@ public class SyncService {
         TaskView incoming;
         try {
             incoming = readTask(userId, mutation);
+            if (incoming.resumeNote() != null && incoming.resumeNote().length() > 1000) {
+                return rejected(mutation, "SYNC_PAYLOAD_INVALID");
+            }
         } catch (RuntimeException exception) {
             return rejected(mutation, "SYNC_PAYLOAD_INVALID");
         }
@@ -221,7 +224,11 @@ public class SyncService {
                         : null,
                 stored.createdAt(),
                 updatedAt,
-                stored.revision() + 1
+                stored.revision() + 1,
+                incoming.resumeNoteUpdatedAt() == null || (stored.resumeNoteUpdatedAt() != null
+                        && stored.resumeNoteUpdatedAt().isAfter(incoming.resumeNoteUpdatedAt()))
+                        ? stored.resumeNote() : incoming.resumeNote(),
+                laterNullable(stored.resumeNoteUpdatedAt(), incoming.resumeNoteUpdatedAt())
         );
         tasks.update(merged);
         if (merged.focusSessionCount() > stored.focusSessionCount()
@@ -738,6 +745,10 @@ public class SyncService {
             ObjectNode normalized = (ObjectNode) mutation.payload().deepCopy();
             normalized.put("userId", userId);
             normalized.remove(List.of("areaId", "deletedAt"));
+            // Older clients omit these optional counters; supply their schema defaults.
+            for (String counter : List.of("focusSessionCount", "focusMinutes")) {
+                if (!normalized.has(counter) || normalized.get(counter).isNull()) normalized.put(counter, 0);
+            }
             normalizeDateOnly(normalized, "deadlineAt", "T23:59:59Z");
             normalizeDateOnly(normalized, "reviewAt", "T00:00:00Z");
             TaskView task = jsonMapper.treeToValue(normalized, TaskView.class);
@@ -787,7 +798,9 @@ public class SyncService {
                 source.canceledAt(),
                 createdAt,
                 source.updatedAt(),
-                revision
+                revision,
+                source.resumeNote(),
+                source.resumeNoteUpdatedAt()
         );
     }
 

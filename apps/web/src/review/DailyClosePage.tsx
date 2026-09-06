@@ -5,6 +5,7 @@ import { useTranslation } from "react-i18next";
 import { Link } from "react-router";
 
 import { TaskDrawer } from "../tasks/TaskDrawer";
+import { ResumeNote } from "../tasks/ResumeNote";
 import {
   notifyTasksChanged,
   reviewApplicationService,
@@ -194,6 +195,7 @@ export function DailyClosePage() {
               <article key={entry.task.id}>
                 <strong>{entry.task.title}</strong>
                 <span>{t(`status.${entry.task.status}`)}</span>
+                <ResumeNote task={entry.task} editable onSaved={() => void load()} />
                 <div className="card-actions">
                   <span className="review-recommended-label">{t("review.recommendedAction")}</span>
                   <button
