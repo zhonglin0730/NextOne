@@ -27,6 +27,7 @@ import { CaptureDialog } from "./tasks/CaptureDialog";
 import { getCaptureContext } from "./tasks/captureContext";
 import { InboxPage } from "./tasks/InboxPage";
 import { TodayPage } from "./today/TodayPage";
+import { SearchDialog } from "./components/SearchDialog";
 
 type NavigationKey = "projects" | "today" | "inbox" | "review" | "board" | "settings";
 
@@ -94,7 +95,7 @@ function NavigationIcon({ name }: { name: NavigationKey }) {
   );
 }
 
-function NavigationLinks() {
+function NavigationLinks({ desktop = false }: { desktop?: boolean }) {
   const { t } = useTranslation();
 
   return (
@@ -109,6 +110,15 @@ function NavigationLinks() {
           <span className="nav-label">{t(`nav.${item.key}`)}</span>
         </NavLink>
       ))}
+      {desktop ? (
+        <NavLink
+          className={({ isActive }) => (isActive ? "nav-link nav-link-active" : "nav-link")}
+          to="/board"
+        >
+          <NavigationIcon name="board" />
+          <span className="nav-label">{t("nav.board")}</span>
+        </NavLink>
+      ) : null}
     </>
   );
 }
@@ -136,6 +146,7 @@ function AppShell() {
   const { t } = useTranslation();
   const location = useLocation();
   const [captureOpen, setCaptureOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
   const captureContext = getCaptureContext(location.pathname);
   const captureLabelKey =
     captureContext.defaultDestination === "TODAY"
@@ -152,22 +163,63 @@ function AppShell() {
     return stopSync;
   }, []);
 
+  useEffect(() => {
+    const onSearch = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        if (document.querySelector('dialog[open], [role="dialog"][aria-modal="true"]')) return;
+        setSearchOpen(true);
+      }
+    };
+    window.addEventListener("keydown", onSearch);
+    return () => window.removeEventListener("keydown", onSearch);
+  }, []);
+
   return (
     <div className="app-shell">
       <a className="skip-link" href="#main-content">
         {t("shell.skipToContent")}
       </a>
 
+      <aside className="app-sidebar">
+        <Link aria-label={t("app.name")} className="app-brand-link" to="/projects">
+          <BrandLogo name={t("app.name")} />
+        </Link>
+        <p className="sidebar-tagline">{t("app.tagline")}</p>
+        <nav className="primary-nav" aria-label={t("shell.primaryNavigation")}>
+          <NavigationLinks desktop />
+        </nav>
+        <div className="sidebar-landscape" aria-hidden="true" />
+        <div className="sidebar-note">
+          <p>
+            {t("shell.sceneryLine")}
+            <br />
+            {t("shell.scenerySecond")}
+          </p>
+          <small>{t("shell.sceneryNote")}</small>
+        </div>
+        <div className="sidebar-settings">
+          <SettingsLink />
+        </div>
+      </aside>
       <header className="app-header">
         <div className="app-header-inner">
-          <Link aria-label={t("app.name")} className="app-brand-link" to="/projects">
+          <Link aria-label={t("app.name")} className="mobile-brand" to="/projects">
             <BrandLogo name={t("app.name")} />
           </Link>
-
-          <nav className="primary-nav" aria-label={t("shell.primaryNavigation")}>
-            <NavigationLinks />
-          </nav>
-
+          <button
+            className="shell-search"
+            type="button"
+            onClick={() => setSearchOpen(true)}
+            aria-label={t("shell.search")}
+          >
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <circle cx="10.5" cy="10.5" r="6.5" stroke="currentColor" strokeWidth="1.6" />
+              <path d="m16 16 5 5" stroke="currentColor" strokeWidth="1.6" />
+            </svg>
+            <span>{t("shell.search")}</span>
+            <kbd>Ctrl K</kbd>
+          </button>
           <div className="app-actions">
             <SyncIndicator />
             {location.pathname === "/inbox" ? null : (
@@ -183,7 +235,6 @@ function AppShell() {
                 <span className="capture-label">{t(captureLabelKey)}</span>
               </button>
             )}
-            <SettingsLink />
           </div>
         </div>
       </header>
@@ -213,6 +264,7 @@ function AppShell() {
       </nav>
 
       <ResumeNoteDialog />
+      <SearchDialog open={searchOpen} onClose={() => setSearchOpen(false)} />
       <CaptureDialog
         defaultDestination={captureContext.defaultDestination}
         {...(captureContext.projectId === undefined

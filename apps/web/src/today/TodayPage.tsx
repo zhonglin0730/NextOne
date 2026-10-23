@@ -5,6 +5,8 @@ import { useTranslation } from "react-i18next";
 import { Link } from "react-router";
 
 import { ActionToast } from "../components/ActionToast";
+import { ScenicNote } from "../components/ScenicNote";
+import { ReviewBrief } from "../review/ReviewBrief";
 import { TaskDrawer } from "../tasks/TaskDrawer";
 import { ResumeNote } from "../tasks/ResumeNote";
 import { transitionWithWipConfirmation } from "../tasks/taskActions";
@@ -255,7 +257,11 @@ export function TodayPage() {
   const confirmOverride = (limit: number) =>
     window.confirm(`${t("wip.title", { limit })}\n\n${t("wip.confirm")}`);
 
-  const transition = async (task: Task, status: TodayTransitionStatus): Promise<boolean> => {
+  const transition = async (
+    task: Task,
+    status: TodayTransitionStatus,
+    propagateFailure = false,
+  ): Promise<boolean> => {
     if (status === "WAITING") {
       setSelectedTaskAction("WAITING");
       setSelectedTask(task);
@@ -271,7 +277,8 @@ export function TodayPage() {
         return true;
       }
       return false;
-    } catch {
+    } catch (error) {
+      if (propagateFailure) throw error;
       setError(t("common.error"));
       return false;
     }
@@ -370,6 +377,9 @@ export function TodayPage() {
           <h1 id="today-title">{t("today.title")}</h1>
           <p>{t("today.description")}</p>
         </div>
+        <time className="page-date" dateTime={localDate}>
+          {dateFormatter.format(new Date(`${localDate}T12:00:00`))}
+        </time>
       </header>
 
       {error.length > 0 ? <p className="page-error">{error}</p> : null}
@@ -406,27 +416,42 @@ export function TodayPage() {
               ) : null}
             </div>
           ) : (
-            <div className="today-task-list">
-              {commitments.map((commitment) => (
-                <TodayTaskCard
-                  commitment={commitment}
-                  isCompleting={completingIds.has(commitment.task.id)}
-                  key={commitment.task.id}
-                  onComplete={(task) => void handleComplete(task)}
-                  onOpen={(task) => {
-                    setSelectedTaskAction(undefined);
-                    setSelectedTask(task);
-                  }}
-                  onRemove={(task) => void remove(task)}
-                  onTransition={(task, status) => void transition(task, status)}
-                  onZen={setZenTask}
-                />
-              ))}
+            <div className="today-groups">
+              {([true, false] as const).map((doing) => {
+                const group = commitments.filter(({ task }) => (task.status === "DOING") === doing);
+                return group.length === 0 ? null : (
+                  <section className="today-task-group" key={String(doing)}>
+                    <h3 className="task-group-heading">
+                      <span className={`group-dot ${doing ? "group-dot-doing" : ""}`} />
+                      {doing ? t("status.DOING") : t("shell.todayPlan")}
+                      <small>{group.length}</small>
+                    </h3>
+                    <div className="today-task-list">
+                      {group.map((commitment) => (
+                        <TodayTaskCard
+                          commitment={commitment}
+                          isCompleting={completingIds.has(commitment.task.id)}
+                          key={commitment.task.id}
+                          onComplete={(task) => void handleComplete(task)}
+                          onOpen={(task) => {
+                            setSelectedTaskAction(undefined);
+                            setSelectedTask(task);
+                          }}
+                          onRemove={(task) => void remove(task)}
+                          onTransition={(task, status) => void transition(task, status)}
+                          onZen={setZenTask}
+                        />
+                      ))}
+                    </div>
+                  </section>
+                );
+              })}
             </div>
           )}
         </section>
 
         <aside className="today-sidebar" aria-label={t("today.dateLabel")}>
+          <ReviewBrief />
           <section className="today-context-card">
             <span>{t("today.dateLabel")}</span>
             <time dateTime={localDate}>
@@ -441,6 +466,7 @@ export function TodayPage() {
           {capacityTasks.length > 0 ? (
             <DailyCapacity capacityMinutes={dailyCapacityMinutes} tasks={capacityTasks} />
           ) : null}
+          <ScenicNote />
         </aside>
       </div>
 
@@ -464,7 +490,7 @@ export function TodayPage() {
             );
             notifyTasksChanged();
           }}
-          onTransition={(status) => transition(zenTask, status)}
+          onTransition={(status) => transition(zenTask, status, true)}
           preferences={zenPreferences}
           task={zenTask}
         />

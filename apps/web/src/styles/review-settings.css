@@ -11,6 +11,24 @@
   gap: var(--nextone-space-4);
 }
 
+.review-page {
+  width: min(100% - 48px, var(--nextone-content-wide));
+  grid-template-columns: minmax(0, 1fr) 272px;
+  align-items: start;
+}
+.review-page > .page-header,
+.review-page > .review-summary-grid,
+.review-page > .page-error {
+  grid-column: 1 / -1;
+}
+.review-page > .scenic-note {
+  grid-column: 2;
+  grid-row: 4 / span 2;
+}
+.review-page > .review-section {
+  grid-column: 1;
+}
+
 .review-page > .page-header,
 .daily-close-page > .page-header {
   margin-block-end: var(--nextone-space-2);
@@ -58,8 +76,7 @@
 .review-summary-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  overflow: hidden;
-  border-block: 1px solid var(--nextone-color-border);
+  gap: var(--nextone-space-3);
 }
 
 .review-summary-card {
@@ -68,6 +85,12 @@
   justify-content: space-between;
   gap: var(--nextone-space-3);
   padding: var(--nextone-space-4) var(--nextone-space-3);
+  flex-direction: column-reverse;
+  align-items: flex-start;
+  border: 1px solid var(--nextone-color-border);
+  border-radius: var(--nextone-radius-large);
+  background: var(--nextone-color-surface);
+  box-shadow: var(--nextone-shadow-card);
 }
 
 .review-summary-card + .review-summary-card {
@@ -81,7 +104,7 @@
 
 .review-summary-card strong {
   color: var(--nextone-color-text);
-  font-size: 18px;
+  font-size: var(--nextone-font-size-title);
   font-variant-numeric: tabular-nums;
 }
 

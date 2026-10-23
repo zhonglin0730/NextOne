@@ -777,6 +777,8 @@ export class IndexedDbLocalDatabase implements LocalDatabase {
       } catch {
         // The transaction may already have completed or aborted.
       }
+      // Consume the abort rejection as well as the work error; callers get the original failure.
+      await completion.catch(() => {});
       throw error;
     }
   }

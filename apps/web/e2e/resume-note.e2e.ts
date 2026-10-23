@@ -123,6 +123,7 @@ test("pause context survives reload and is shared by project, today and daily cl
   await page.locator(".today-task-card").getByRole("button", { name: "开始", exact: true }).click();
   await page.locator(".today-task-card").getByRole("button", { name: "专注", exact: true }).click();
   const zen = page.locator(".zen-mode");
+  await zen.locator(".zen-details > summary").click();
   await zen.getByRole("button", { name: "暂停任务并留在今天" }).click();
   await expect(pause).toBeVisible();
   await page.keyboard.press("Escape");

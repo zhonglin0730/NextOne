@@ -90,7 +90,7 @@ p {
 .page {
   width: min(var(--nextone-content-standard), calc(100% - 48px));
   margin-inline: auto;
-  padding-block: var(--nextone-space-2xl) var(--nextone-space-3xl);
+  padding-block: var(--nextone-space-xl) var(--nextone-space-3xl);
 }
 
 .page-header {
@@ -107,8 +107,8 @@ p {
 
 .page-header h1 {
   margin: 4px 0 8px;
-  font-size: clamp(2rem, 4vw, 3rem);
-  letter-spacing: -0.045em;
+  font-size: var(--nextone-font-size-title);
+  letter-spacing: -0.035em;
 }
 
 .page-header > div:first-child > p:last-child {
@@ -135,6 +135,33 @@ p {
   font-size: 0.75rem;
   font-weight: 700;
   letter-spacing: 0.065em;
+}
+
+.page-date {
+  color: var(--nextone-color-text-muted);
+  font-size: var(--nextone-font-size-sm);
+  white-space: nowrap;
+}
+.scenic-note {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  min-height: 212px;
+  border-radius: var(--nextone-radius-large);
+  padding: var(--nextone-space-lg);
+  color: var(--nextone-color-on-image);
+  background:
+    linear-gradient(transparent, var(--nextone-image-overlay)),
+    url("/images/alpine-lake.png") center 60% / cover;
+  overflow: hidden;
+}
+.scenic-note p {
+  margin: 0 0 var(--nextone-space-sm);
+  font-size: var(--nextone-font-size-heading);
+  line-height: 1.65;
+}
+.scenic-note small {
+  font-size: var(--nextone-font-size-xs);
 }
 
 .muted,
@@ -183,7 +210,7 @@ p {
 
 .button-primary,
 .capture-button {
-  color: #fff;
+  color: var(--nextone-color-on-accent);
   background: var(--nextone-color-accent);
   border-color: var(--nextone-color-accent);
   box-shadow: 0 1px 1px rgb(32 36 43 / 8%);
@@ -542,6 +569,7 @@ html[data-theme="dark"] {
   --nextone-color-border: #30343a;
   --nextone-color-border-strong: #454a52;
   --nextone-color-accent: #6f91c8;
+  --nextone-color-on-accent: #121418;
   --nextone-color-accent-strong: #91add7;
   --nextone-color-accent-soft: #202b3d;
   --nextone-color-accent-border: #3a5273;
@@ -572,6 +600,7 @@ html[data-theme="dark"] {
     --nextone-color-border: #30343a;
     --nextone-color-border-strong: #454a52;
     --nextone-color-accent: #6f91c8;
+    --nextone-color-on-accent: #121418;
     --nextone-color-accent-strong: #91add7;
     --nextone-color-accent-soft: #202b3d;
     --nextone-color-accent-border: #3a5273;

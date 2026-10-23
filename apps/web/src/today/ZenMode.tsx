@@ -5,6 +5,9 @@ import { useTranslation } from "react-i18next";
 import type { TodayTransitionStatus } from "./transitionFeedback";
 import { addFocusedMinutes, resetFocusedMinutes } from "./focusReminder";
 import { ResumeNote } from "../tasks/ResumeNote";
+import { AmbientSound } from "./AmbientSound";
+import { projectApplicationService } from "../tasks/taskService";
+import { FocusClock, recordedFocusMinutes } from "./focusClock";
 
 type ZenPhase = "SETUP" | "FOCUS" | "RECOVERY" | "BREAK";
 
@@ -33,9 +36,18 @@ function formatClock(totalSeconds: number): string {
 export function ZenMode({ task, preferences, onClose, onRecordFocus, onTransition }: ZenModeProps) {
   const { t } = useTranslation();
   const closeButtonRef = useRef<HTMLButtonElement>(null);
-  const startedAtRef = useRef(0);
-  const elapsedBeforeStartRef = useRef(0);
+  const roomRef = useRef<HTMLElement>(null);
+  const [projectName, setProjectName] = useState("");
+  const [clock] = useState(() => new FocusClock());
   const finishingRef = useRef(false);
+  const pendingSaveRef = useRef<
+    { milliseconds: number; destination: "recovery" | "exit" | "complete" } | undefined
+  >(undefined);
+  const [exitPrompt, setExitPrompt] = useState<{
+    milliseconds: number;
+    wasRunning: boolean;
+  } | null>(null);
+  const cancelExitButtonRef = useRef<HTMLButtonElement>(null);
   const sessionRecordedRef = useRef(false);
   const exitHandlerRef = useRef<() => void>(() => onClose());
   const [phase, setPhase] = useState<ZenPhase>("SETUP");
@@ -49,7 +61,7 @@ export function ZenMode({ task, preferences, onClose, onRecordFocus, onTransitio
   const [recordedSessionCount, setRecordedSessionCount] = useState(0);
   const [recordedTotalMinutes, setRecordedTotalMinutes] = useState(0);
   const [submitting, setSubmitting] = useState(false);
-  const [failed, setFailed] = useState(false);
+  const [failed, setFailed] = useState<"record" | "transition" | null>(null);
 
   const durationOptions = useMemo(
     () => [...new Set([preferences.focusDurationMinutes, 25, 50])].sort((a, b) => a - b),
@@ -72,7 +84,11 @@ export function ZenMode({ task, preferences, onClose, onRecordFocus, onTransitio
       "Notification" in window &&
       Notification.permission === "granted"
     ) {
-      new Notification(title, { body });
+      try {
+        new Notification(title, { body });
+      } catch {
+        /* Notifications never invalidate a saved session. */
+      }
     }
   };
 
@@ -82,48 +98,69 @@ export function ZenMode({ task, preferences, onClose, onRecordFocus, onTransitio
       "Notification" in window &&
       Notification.permission === "default"
     ) {
-      void Notification.requestPermission();
+      void Notification.requestPermission().catch(() => {});
     }
   };
 
   const startClock = (nextPhase: Extract<ZenPhase, "FOCUS" | "BREAK">) => {
-    sessionRecordedRef.current = false;
-    requestNotifications();
+    if (finishingRef.current || pendingSaveRef.current || exitPrompt) return;
+    if (nextPhase === "FOCUS") {
+      sessionRecordedRef.current = false;
+      requestNotifications();
+    }
     setPhase(nextPhase);
     setElapsedSeconds(0);
-    elapsedBeforeStartRef.current = 0;
-    startedAtRef.current = Date.now();
+    clock.start();
     setRunning(true);
-    setFailed(false);
+    setFailed(null);
   };
 
   const persistFocus = async (durationMinutes: number, plannedMinutes?: number) => {
     if (sessionRecordedRef.current) return;
     await onRecordFocus(durationMinutes, plannedMinutes);
     sessionRecordedRef.current = true;
-    const reminder = addFocusedMinutes(durationMinutes, preferences.movementReminderMinutes);
-    setMovementDue(reminder.movementDue);
     setRecordedMinutes(durationMinutes);
     setRecordedSessionCount((current) => current + 1);
     setRecordedTotalMinutes((current) => current + durationMinutes);
+    try {
+      const reminder = addFocusedMinutes(durationMinutes, preferences.movementReminderMinutes);
+      setMovementDue(reminder.movementDue);
+    } catch {
+      /* Optional reminder storage must not invalidate a committed focus record. */
+    }
   };
 
-  const completeFocus = async () => {
+  const completeFocus = async (
+    destination: "recovery" | "exit" | "complete" = "recovery",
+    snapshot = clock.pause(),
+  ) => {
     if (finishingRef.current) return;
     finishingRef.current = true;
     setRunning(false);
+    setExitPrompt(null);
+    setElapsedSeconds(Math.floor(snapshot / 1000));
     setSubmitting(true);
-    setFailed(false);
-    const durationMinutes = selectedMinutes ?? Math.max(1, Math.round(elapsedSeconds / 60));
+    setFailed(null);
+    pendingSaveRef.current = { milliseconds: snapshot, destination };
+    const durationMinutes = recordedFocusMinutes(snapshot, selectedMinutes);
     try {
-      await persistFocus(durationMinutes, selectedMinutes ?? undefined);
-      setPhase("RECOVERY");
-      notify(
-        t("zen.focusCompleteNotification"),
-        t("zen.focusCompleteNotificationBody", { title: task.title }),
-      );
+      if (durationMinutes > 0) await persistFocus(durationMinutes, selectedMinutes ?? undefined);
+      else setRecordedMinutes(0);
+      pendingSaveRef.current = undefined;
+      if (destination === "exit") onClose();
+      else if (destination === "complete") {
+        setPhase("RECOVERY");
+        if (await onTransition("COMPLETED")) onClose();
+        else setFailed("transition");
+      } else {
+        setPhase("RECOVERY");
+        notify(
+          t("zen.focusCompleteNotification"),
+          t("zen.focusCompleteNotificationBody", { title: task.title }),
+        );
+      }
     } catch {
-      setFailed(true);
+      setFailed(pendingSaveRef.current ? "record" : "transition");
     } finally {
       setSubmitting(false);
       finishingRef.current = false;
@@ -131,28 +168,86 @@ export function ZenMode({ task, preferences, onClose, onRecordFocus, onTransitio
   };
 
   useEffect(() => {
+    const previousFocus =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const previousOverflow = document.body.style.overflow;
     closeButtonRef.current?.focus();
     const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") exitHandlerRef.current();
+      const room = roomRef.current;
+      if (
+        !room ||
+        (document.activeElement !== document.body && !room.contains(document.activeElement))
+      )
+        return;
+      if (event.key === "Escape" && !event.defaultPrevented) exitHandlerRef.current();
+      if (event.key === "Tab") {
+        const scope = room.querySelector<HTMLElement>('[role="alertdialog"]') ?? room;
+        const items = [
+          ...scope.querySelectorAll<HTMLElement>(
+            "button:not(:disabled), input:not(:disabled), summary, a[href]",
+          ),
+        ].filter((item) => item.getClientRects().length > 0);
+        const first = items[0];
+        const last = items.at(-1);
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault();
+          last?.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault();
+          first?.focus();
+        }
+      }
     };
     document.body.style.overflow = "hidden";
     window.addEventListener("keydown", closeOnEscape);
     return () => {
-      document.body.style.overflow = "";
+      document.body.style.overflow = previousOverflow;
       window.removeEventListener("keydown", closeOnEscape);
+      previousFocus?.focus({ preventScroll: true });
     };
   }, []);
 
   useEffect(() => {
+    if (exitPrompt) cancelExitButtonRef.current?.focus();
+  }, [exitPrompt]);
+
+  useEffect(() => {
+    const beforeUnload = (event: BeforeUnloadEvent) => {
+      if (phase === "FOCUS" && !sessionRecordedRef.current && clock.elapsed() >= 1000) {
+        event.preventDefault();
+        event.returnValue = "";
+      }
+    };
+    window.addEventListener("beforeunload", beforeUnload);
+    return () => window.removeEventListener("beforeunload", beforeUnload);
+  }, [phase, clock]);
+
+  useEffect(() => {
+    let active = true;
+    if (task.projectId)
+      void projectApplicationService
+        .listProjects()
+        .then((projects) => {
+          if (active)
+            setProjectName(projects.find((project) => project.id === task.projectId)?.name ?? "");
+        })
+        .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [task.projectId]);
+
+  useEffect(() => {
     if (!running) return;
-    const update = () =>
-      setElapsedSeconds(
-        elapsedBeforeStartRef.current + Math.floor((Date.now() - startedAtRef.current) / 1000),
-      );
+    const update = () => setElapsedSeconds(Math.floor(clock.elapsed() / 1000));
     update();
     const interval = window.setInterval(update, 250);
-    return () => window.clearInterval(interval);
-  }, [running]);
+    document.addEventListener("visibilitychange", update);
+    return () => {
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", update);
+    };
+  }, [running, clock]);
 
   useEffect(() => {
     if (!running || timerDurationSeconds === undefined || elapsedSeconds < timerDurationSeconds)
@@ -161,6 +256,7 @@ export function ZenMode({ task, preferences, onClose, onRecordFocus, onTransitio
       void completeFocus();
       return;
     }
+    clock.pause();
     setRunning(false);
     setPhase("SETUP");
     setElapsedSeconds(0);
@@ -177,70 +273,81 @@ export function ZenMode({ task, preferences, onClose, onRecordFocus, onTransitio
   }, [displaySeconds, phase, task.title]);
 
   const toggleTimer = () => {
+    if (finishingRef.current || pendingSaveRef.current || exitPrompt) return;
     if (running) {
-      elapsedBeforeStartRef.current = elapsedSeconds;
+      setElapsedSeconds(Math.floor(clock.pause() / 1000));
       setRunning(false);
       return;
     }
-    startedAtRef.current = Date.now();
+    clock.resume();
     setRunning(true);
   };
 
   const finishEarly = async () => {
-    if (elapsedSeconds < 60) {
-      setPhase("RECOVERY");
-      setRecordedMinutes(0);
-      setRunning(false);
-      return;
-    }
     await completeFocus();
   };
 
   const handleExit = async () => {
-    if (phase !== "FOCUS" || elapsedSeconds < 60) {
+    if (submitting || finishingRef.current) return;
+    if (phase !== "FOCUS") {
       onClose();
       return;
     }
-    if (!window.confirm(t("zen.exitConfirm"))) return;
-    setSubmitting(true);
-    try {
-      await persistFocus(
-        Math.max(1, Math.round(elapsedSeconds / 60)),
-        selectedMinutes ?? undefined,
-      );
+    const snapshot = clock.pause();
+    setElapsedSeconds(Math.floor(snapshot / 1000));
+    if (snapshot < 1000) {
       onClose();
-    } catch {
-      setFailed(true);
-      setSubmitting(false);
+      return;
     }
+    setExitPrompt({ milliseconds: snapshot, wasRunning: running });
+    setRunning(false);
   };
-  exitHandlerRef.current = () => void handleExit();
+  const cancelExit = () => {
+    if (exitPrompt?.wasRunning && !pendingSaveRef.current) {
+      clock.resume();
+      setRunning(true);
+    }
+    setExitPrompt(null);
+    closeButtonRef.current?.focus();
+  };
+  exitHandlerRef.current = () => {
+    if (exitPrompt) cancelExit();
+    else void handleExit();
+  };
 
   const transition = async (status: Extract<TodayTransitionStatus, "READY" | "COMPLETED">) => {
-    if (submitting) return;
+    if (finishingRef.current || pendingSaveRef.current || exitPrompt) return;
+    finishingRef.current = true;
     setSubmitting(true);
-    setFailed(false);
+    setFailed(null);
     const wasRunning = running;
-    elapsedBeforeStartRef.current = elapsedSeconds;
+    const snapshot = clock.pause();
+    setElapsedSeconds(Math.floor(snapshot / 1000));
     setRunning(false);
     try {
       // Confirm the optional handoff first. Canceling must not record a focus session.
       if (status === "READY" && !(await onTransition(status))) {
-        startedAtRef.current = Date.now();
+        if (wasRunning) clock.resume();
         setRunning(wasRunning);
-        setSubmitting(false);
         return;
       }
-      if (phase === "FOCUS" && elapsedSeconds >= 60) {
-        await persistFocus(
-          Math.max(1, Math.round(elapsedSeconds / 60)),
-          selectedMinutes ?? undefined,
-        );
+      if (phase === "FOCUS") {
+        const minutes = recordedFocusMinutes(snapshot, selectedMinutes);
+        pendingSaveRef.current = {
+          milliseconds: snapshot,
+          destination: status === "READY" ? "exit" : "complete",
+        };
+        if (minutes > 0) await persistFocus(minutes, selectedMinutes ?? undefined);
+        else setRecordedMinutes(0);
+        pendingSaveRef.current = undefined;
+        if (status === "COMPLETED") setPhase("RECOVERY");
       }
       if (status === "READY" || (await onTransition(status))) onClose();
-      else setSubmitting(false);
+      else setFailed("transition");
     } catch {
-      setFailed(true);
+      setFailed(pendingSaveRef.current ? "record" : "transition");
+    } finally {
+      finishingRef.current = false;
       setSubmitting(false);
     }
   };
@@ -249,27 +356,39 @@ export function ZenMode({ task, preferences, onClose, onRecordFocus, onTransitio
   const totalMinutes = (task.focusMinutes ?? 0) + recordedTotalMinutes;
 
   return (
-    <section aria-labelledby="zen-title" aria-modal="true" className="zen-mode" role="dialog">
-      <button
-        aria-label={t("zen.exit")}
-        className="zen-exit"
-        disabled={submitting}
-        onClick={() => void handleExit()}
-        ref={closeButtonRef}
-        type="button"
-      >
-        {t("zen.exit")}
-      </button>
-      <div className="zen-content">
-        <p className="zen-eyebrow">{t("zen.eyebrow")}</p>
+    <section
+      ref={roomRef}
+      aria-labelledby="zen-title"
+      aria-modal="true"
+      className={`zen-mode zen-immersive zen-phase-${phase.toLowerCase()}`}
+      role="dialog"
+    >
+      <div className="zen-landscape" aria-hidden="true" />
+      <header className="zen-topbar" inert={exitPrompt !== null}>
+        <button
+          aria-label={t("zen.exit")}
+          className="zen-exit"
+          disabled={submitting}
+          onClick={() => void handleExit()}
+          ref={closeButtonRef}
+          type="button"
+        >
+          <span aria-hidden="true">←</span> {t("zen.backToday")}
+        </button>
+        <span className="zen-project">{projectName || t("zen.open")}</span>
+        <span className="zen-location">{t("zen.landscape")}</span>
+      </header>
+      <div className="zen-content" inert={exitPrompt !== null}>
+        <p className="zen-eyebrow">
+          {t(phase === "BREAK" || phase === "RECOVERY" ? "zen.resting" : "zen.eyebrow")}
+        </p>
         <h2 id="zen-title">{task.title}</h2>
 
         {phase === "SETUP" ? (
           <div className="zen-session-panel">
-            <div>
-              <h3>{t("zen.setupTitle")}</h3>
-              <p>{t("zen.setupHint")}</p>
-            </div>
+            <strong className="zen-clock-preview" aria-hidden="true">
+              {selectedMinutes === null ? "00:00" : formatClock(selectedMinutes * 60)}
+            </strong>
             <div aria-label={t("zen.setupTitle")} className="zen-duration-options" role="group">
               {durationOptions.map((minutes) => (
                 <button
@@ -307,9 +426,11 @@ export function ZenMode({ task, preferences, onClose, onRecordFocus, onTransitio
               {t(
                 phase === "BREAK"
                   ? "zen.breakTimerLabel"
-                  : selectedMinutes === null
-                    ? "zen.elapsedLabel"
-                    : "zen.timerLabel",
+                  : !running && !submitting
+                    ? "zen.timerPaused"
+                    : selectedMinutes === null
+                      ? "zen.elapsedLabel"
+                      : "zen.timerLabel",
               )}
             </span>
             <strong aria-live="off" role="timer">
@@ -317,11 +438,17 @@ export function ZenMode({ task, preferences, onClose, onRecordFocus, onTransitio
             </strong>
             {phase === "FOCUS" ? (
               <div className="zen-timer-actions">
-                <button className="button button-quiet" onClick={toggleTimer} type="button">
+                <button
+                  className="button zen-primary"
+                  disabled={submitting || failed === "record"}
+                  onClick={toggleTimer}
+                  type="button"
+                >
                   {t(running ? "zen.pauseTimer" : "zen.resumeTimer")}
                 </button>
                 <button
                   className="button button-outline"
+                  disabled={submitting || failed === "record"}
                   onClick={() => void finishEarly()}
                   type="button"
                 >
@@ -332,6 +459,7 @@ export function ZenMode({ task, preferences, onClose, onRecordFocus, onTransitio
               <button
                 className="button button-quiet"
                 onClick={() => {
+                  clock.pause();
                   setRunning(false);
                   setPhase("SETUP");
                   setElapsedSeconds(0);
@@ -353,13 +481,19 @@ export function ZenMode({ task, preferences, onClose, onRecordFocus, onTransitio
                 <span className="zen-recorded">
                   {t("zen.sessionRecorded", { count: recordedMinutes })}
                 </span>
-              ) : null}
+              ) : (
+                <span className="zen-recorded">{t("zen.shortSession")}</span>
+              )}
             </div>
             {movementDue ? (
               <button
                 className="button button-primary"
                 onClick={() => {
-                  resetFocusedMinutes();
+                  try {
+                    resetFocusedMinutes();
+                  } catch {
+                    /* A reminder can still be dismissed. */
+                  }
                   setMovementDue(false);
                 }}
                 type="button"
@@ -389,44 +523,116 @@ export function ZenMode({ task, preferences, onClose, onRecordFocus, onTransitio
           </div>
         ) : null}
 
-        <ResumeNote task={task} />
-        {task.note === undefined ? (
-          <p className="zen-note">{t("zen.noNote")}</p>
-        ) : (
-          <p className="zen-note">{task.note}</p>
-        )}
-        <p className="zen-focus-total">
-          {totalSessions === 0
-            ? t("zen.noRecordedTime")
-            : t("zen.totalRecorded", { sessions: totalSessions, minutes: totalMinutes })}
-        </p>
         {failed ? (
-          <p className="zen-error" role="alert">
-            {t("zen.recordFailed")}
-          </p>
-        ) : null}
-        <div className="zen-task-actions">
-          <span>{t("zen.taskActions")}</span>
-          <div className="zen-actions">
-            <button
-              className="button zen-pause"
-              disabled={submitting}
-              onClick={() => void transition("READY")}
-              type="button"
-            >
-              {t("zen.pause")}
-            </button>
-            <button
-              className="button button-primary zen-complete"
-              disabled={submitting}
-              onClick={() => void transition("COMPLETED")}
-              type="button"
-            >
-              {t("zen.complete")}
-            </button>
+          <div className="zen-error" role="alert">
+            {t(failed === "record" ? "zen.recordFailed" : "zen.transitionFailed")}
+            {failed === "record" ? (
+              <button
+                className="button button-outline"
+                type="button"
+                disabled={submitting}
+                onClick={() => {
+                  const pending = pendingSaveRef.current;
+                  if (pending) void completeFocus(pending.destination, pending.milliseconds);
+                }}
+              >
+                {t("zen.retrySave")}
+              </button>
+            ) : null}
+            {failed === "record" ? (
+              <button
+                className="button button-outline"
+                disabled={submitting}
+                type="button"
+                onClick={onClose}
+              >
+                {t("zen.discardAndExit")}
+              </button>
+            ) : null}
           </div>
-        </div>
+        ) : null}
+        <details className="zen-details">
+          <summary>{t("zen.details")}</summary>
+          <div className="zen-details-body">
+            <ResumeNote task={task} />
+            {task.note ? <p className="zen-note">{task.note}</p> : null}
+            {totalSessions > 0 ? (
+              <p className="zen-focus-total">
+                {t("zen.totalRecorded", { sessions: totalSessions, minutes: totalMinutes })}
+              </p>
+            ) : null}
+            <div className="zen-actions">
+              <button
+                className="button zen-pause"
+                disabled={submitting || failed === "record"}
+                onClick={() => void transition("READY")}
+                type="button"
+              >
+                {t("zen.pause")}
+              </button>
+              <button
+                className="button button-primary zen-complete"
+                disabled={submitting || failed === "record"}
+                onClick={() => void transition("COMPLETED")}
+                type="button"
+              >
+                {t("zen.complete")}
+              </button>
+            </div>
+          </div>
+        </details>
       </div>
+      <footer className="zen-footer" inert={exitPrompt !== null}>
+        <AmbientSound
+          allowed={
+            !exitPrompt &&
+            !submitting &&
+            (phase === "SETUP" || phase === "BREAK" || (phase === "FOCUS" && running))
+          }
+        />
+      </footer>
+      {exitPrompt ? (
+        <div className="zen-exit-overlay">
+          <section
+            className="zen-exit-dialog"
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="zen-exit-title"
+            aria-describedby="zen-exit-description"
+          >
+            <h3 id="zen-exit-title">{t("zen.exitTitle")}</h3>
+            <p id="zen-exit-description">
+              {t(
+                recordedFocusMinutes(exitPrompt.milliseconds, selectedMinutes) > 0
+                  ? "zen.exitSaveHint"
+                  : "zen.exitShortHint",
+                { count: recordedFocusMinutes(exitPrompt.milliseconds, selectedMinutes) },
+              )}
+            </p>
+            <div className="zen-actions">
+              <button
+                className="button zen-primary"
+                type="button"
+                ref={cancelExitButtonRef}
+                onClick={cancelExit}
+              >
+                {t("zen.returnFocus")}
+              </button>
+              <button
+                className="button button-outline"
+                type="button"
+                onClick={() => void completeFocus("exit", exitPrompt.milliseconds)}
+              >
+                {t(
+                  recordedFocusMinutes(exitPrompt.milliseconds, selectedMinutes) > 0
+                    ? "zen.saveAndExit"
+                    : "zen.exit",
+                )}
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
     </section>
   );
 }

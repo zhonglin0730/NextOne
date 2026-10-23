@@ -5,6 +5,7 @@ import "./styles/projects.css";
 import "./styles/tasks.css";
 import "./styles/review-settings.css";
 import "./styles/responsive.css";
+import "./styles/zen.css";
 import "./i18n";
 
 import { StrictMode } from "react";

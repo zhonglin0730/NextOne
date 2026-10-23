@@ -10,6 +10,7 @@ import {
 } from "../tasks/taskService";
 import { getWeekStartsAt } from "../today/date";
 import { ProjectPortfolioOverview } from "./ProjectPortfolioOverview";
+import { ScenicNote } from "../components/ScenicNote";
 
 const workflowSteps = [
   ["capture", "/inbox"],
@@ -142,7 +143,7 @@ export function ProjectsPage() {
         <div className="projects-dashboard">
           <ProjectPortfolioOverview projects={projects} />
 
-          {needsDecisionCount > 0 || showWorkflowGuide ? (
+          {
             <aside className="projects-dashboard-aside" aria-label={t("project.dashboardTitle")}>
               {needsDecisionCount > 0 ? (
                 <section
@@ -200,8 +201,9 @@ export function ProjectsPage() {
                   </ol>
                 </section>
               ) : null}
+              <ScenicNote />
             </aside>
-          ) : null}
+          }
         </div>
       )}
 

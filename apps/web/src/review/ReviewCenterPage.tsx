@@ -5,6 +5,7 @@ import { useTranslation } from "react-i18next";
 import { Link } from "react-router";
 
 import { ActionToast } from "../components/ActionToast";
+import { ScenicNote } from "../components/ScenicNote";
 import { transitionWithWipConfirmation } from "../tasks/taskActions";
 import { TaskDrawer } from "../tasks/TaskDrawer";
 import {
@@ -210,6 +211,8 @@ export function ReviewCenterPage() {
           ))}
         </div>
       ) : null}
+
+      <ScenicNote />
 
       {view !== undefined && view.items.length > 0 ? (
         <section className="review-section">

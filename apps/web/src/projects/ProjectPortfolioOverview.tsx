@@ -64,6 +64,9 @@ export function ProjectPortfolioOverview({ projects }: ProjectPortfolioOverviewP
               key={project.id}
               to={`/projects/${project.id}`}
             >
+              <div className="portfolio-project-cover" aria-hidden="true">
+                <span>{project.name.slice(0, 1)}</span>
+              </div>
               <div className="portfolio-project-row-header">
                 <span className="portfolio-project-copy">
                   <strong>{project.name}</strong>

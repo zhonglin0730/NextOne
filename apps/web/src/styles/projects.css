@@ -4,7 +4,7 @@
 
 .projects-dashboard {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 292px;
+  grid-template-columns: minmax(0, 1fr) 256px;
   align-items: start;
   gap: var(--nextone-space-6);
 }
@@ -26,15 +26,17 @@
 
 .portfolio-overview {
   min-width: 0;
-  overflow: hidden;
+  border: 0;
+  background: transparent;
 }
 
 .portfolio-overview-header {
   display: flex;
-  align-items: end;
+  align-items: start;
+  flex-direction: column;
   justify-content: space-between;
   gap: var(--nextone-space-5);
-  padding: var(--nextone-space-6) var(--nextone-space-6) var(--nextone-space-5);
+  padding: 0 0 var(--nextone-space-lg);
 }
 
 .portfolio-overview-header h2,
@@ -96,14 +98,22 @@
 }
 
 .portfolio-project-list {
-  border-block-start: 1px solid var(--nextone-color-border);
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--nextone-space-lg);
 }
 
 .portfolio-project-row {
   display: grid;
   gap: var(--nextone-space-3);
   color: inherit;
-  padding: var(--nextone-space-5) var(--nextone-space-6);
+  align-content: start;
+  overflow: hidden;
+  padding: 0 0 var(--nextone-space-md);
+  border: 1px solid var(--nextone-color-border);
+  border-radius: var(--nextone-radius-large);
+  background: var(--nextone-color-surface);
+  box-shadow: var(--nextone-shadow-sm);
   text-decoration: none;
   transition: background var(--nextone-motion-fast);
 }
@@ -113,7 +123,50 @@
 }
 
 .portfolio-project-row:hover {
-  background: var(--nextone-color-surface-subtle);
+  border-color: var(--nextone-color-accent-border);
+  background: var(--nextone-color-surface);
+}
+
+.portfolio-project-cover {
+  height: var(--nextone-cover-height);
+  padding: var(--nextone-space-md);
+  display: flex;
+  align-items: flex-end;
+  background: url("/images/alpine-lake.png") center 55% / cover;
+}
+.portfolio-project-cover span {
+  display: grid;
+  place-items: center;
+  width: var(--nextone-touch-target);
+  height: var(--nextone-touch-target);
+  border-radius: var(--nextone-radius-medium);
+  background: var(--nextone-color-surface);
+  color: var(--nextone-color-accent-strong);
+  font-size: var(--nextone-font-size-heading);
+  font-weight: 650;
+}
+.portfolio-project-row:nth-child(even) .portfolio-project-cover {
+  background-position: center 85%;
+}
+.portfolio-project-row-header,
+.portfolio-project-row-footer,
+.portfolio-project-progress {
+  margin-inline: var(--nextone-space-md);
+}
+.portfolio-project-row-header {
+  flex-wrap: wrap;
+}
+.portfolio-project-row-footer {
+  flex-direction: column;
+  align-items: flex-start;
+}
+.portfolio-project-copy {
+  flex: 1 1 100%;
+}
+.portfolio-project-copy strong,
+.portfolio-project-copy small {
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .portfolio-project-row:focus-visible {
@@ -144,7 +197,8 @@
   color: var(--nextone-color-text);
   font-size: 16px;
   text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .portfolio-project-copy small {
@@ -152,7 +206,8 @@
   color: var(--nextone-color-text-muted);
   font-size: 13px;
   text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .portfolio-project-state {
@@ -279,8 +334,12 @@
 }
 
 .project-attention-list a::after {
-  color: var(--nextone-color-warning);
-  content: "→";
+  content: none;
+}
+
+.project-attention-list a strong {
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .project-workflow-guide {
@@ -450,13 +509,13 @@
 
 .board-columns {
   display: grid;
-  grid-template-columns: repeat(4, minmax(230px, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   align-items: start;
   gap: var(--nextone-space-3);
 }
 
 .project-workspace-page .board-columns {
-  grid-template-columns: repeat(3, minmax(220px, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .board-column {
@@ -470,6 +529,48 @@
     var(--nextone-color-background)
   );
   padding: var(--nextone-space-3);
+}
+
+.board-column-ready {
+  background: color-mix(
+    in srgb,
+    var(--nextone-color-success-soft) 65%,
+    var(--nextone-color-background)
+  );
+}
+.board-column-doing {
+  background: var(--nextone-color-accent-soft);
+}
+.board-column-waiting {
+  background: color-mix(
+    in srgb,
+    var(--nextone-color-warning-soft) 65%,
+    var(--nextone-color-background)
+  );
+}
+.board-column-completed {
+  background: var(--nextone-color-surface-subtle);
+}
+.board-column > header h2 {
+  display: flex;
+  align-items: center;
+  gap: var(--nextone-space-sm);
+}
+.board-column > header h2::before {
+  content: "";
+  width: var(--nextone-space-sm);
+  height: var(--nextone-space-sm);
+  border-radius: 50%;
+  background: var(--nextone-color-text-muted);
+}
+.board-column-ready > header h2::before {
+  background: var(--nextone-color-success);
+}
+.board-column-doing > header h2::before {
+  background: var(--nextone-color-accent);
+}
+.board-column-waiting > header h2::before {
+  background: var(--nextone-color-warning);
 }
 
 .board-column > header {

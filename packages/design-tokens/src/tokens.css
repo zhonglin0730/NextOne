@@ -2,23 +2,24 @@
   color-scheme: light;
 
   /* Ink and paper */
-  --nextone-color-background: #f5f4f0;
-  --nextone-color-surface: #fcfbf8;
+  --nextone-color-background: #f6f7f8;
+  --nextone-color-surface: #ffffff;
   --nextone-color-control: #ffffff;
-  --nextone-color-surface-subtle: #efede7;
-  --nextone-color-navigation: #faf9f6;
-  --nextone-color-text: #20242b;
-  --nextone-color-text-soft: #4f5661;
-  --nextone-color-text-muted: #747981;
-  --nextone-color-border: #dfdcd4;
-  --nextone-color-border-strong: #c9c5bb;
+  --nextone-color-surface-subtle: #eef1f5;
+  --nextone-color-navigation: #f3f6fa;
+  --nextone-color-text: #182338;
+  --nextone-color-text-soft: #526079;
+  --nextone-color-text-muted: #68758b;
+  --nextone-color-border: #e3e8ef;
+  --nextone-color-border-strong: #c5cede;
 
   /* One restrained product accent */
-  --nextone-color-accent: #315f9f;
-  --nextone-color-accent-strong: #264a7e;
-  --nextone-color-accent-soft: #edf2f8;
-  --nextone-color-accent-border: #b9c9dd;
-  --nextone-color-focus: #e8eef6;
+  --nextone-color-accent: #2868dc;
+  --nextone-color-on-accent: #ffffff;
+  --nextone-color-accent-strong: #2055b3;
+  --nextone-color-accent-soft: #edf4ff;
+  --nextone-color-accent-border: #c8daf8;
+  --nextone-color-focus: #dfeaff;
 
   /* Semantic state colors */
   --nextone-color-success: #33765e;
@@ -74,6 +75,23 @@
   --nextone-content-wide: 1200px;
   --nextone-content-board: 1400px;
   --nextone-header-height: 68px;
+  --nextone-sidebar-width: 216px;
+  --nextone-font-size-title: 2rem;
+  --nextone-color-on-image: #ffffff;
+  --nextone-image-overlay: rgb(18 35 56 / 60%);
+  --nextone-cover-height: 124px;
+  --nextone-radius-pill: 999px;
+
+  /* Immersive task focus: fixed contrast over the shared natural landscape. */
+  --nextone-focus-background: #243b42;
+  --nextone-focus-text: #faf9f3;
+  --nextone-focus-muted: #e0e6e3;
+  --nextone-focus-shade: rgb(13 31 38 / 64%);
+  --nextone-focus-control: rgb(18 37 44 / 70%);
+  --nextone-focus-border: rgb(250 249 243 / 35%);
+  --nextone-focus-button: #f4f1e7;
+  --nextone-focus-button-ink: #20373f;
+  --nextone-focus-clock-size: clamp(5rem, 14vw, 9rem);
 
   /* Depth and motion */
   --nextone-shadow-card: 0 1px 2px rgb(49 45 37 / 5%);

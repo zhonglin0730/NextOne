@@ -1,5 +1,146 @@
 .app-shell {
   min-height: 100dvh;
+  padding-inline-start: var(--nextone-sidebar-width);
+}
+
+.app-sidebar {
+  position: fixed;
+  inset: 0 auto 0 0;
+  z-index: 45;
+  display: flex;
+  flex-direction: column;
+  width: var(--nextone-sidebar-width);
+  padding: var(--nextone-space-xl) var(--nextone-space-md) var(--nextone-space-md);
+  overflow-y: auto;
+  border-inline-end: 1px solid var(--nextone-color-border);
+  background: var(--nextone-color-navigation);
+}
+
+.sidebar-tagline {
+  position: relative;
+  z-index: 1;
+  margin: var(--nextone-space-xs) 0 var(--nextone-space-xl) var(--nextone-space-md);
+  font-size: var(--nextone-font-size-xs);
+  color: var(--nextone-color-text-muted);
+}
+
+.sidebar-landscape {
+  position: absolute;
+  inset: 38% 0 0;
+  background:
+    linear-gradient(
+      var(--nextone-color-navigation),
+      transparent 58%,
+      var(--nextone-color-navigation)
+    ),
+    url("/images/alpine-lake.png") center / auto 100% no-repeat;
+  opacity: 0.24;
+  pointer-events: none;
+}
+
+.sidebar-note {
+  position: relative;
+  margin-block-start: auto;
+  padding: var(--nextone-space-xl) var(--nextone-space-md);
+  color: var(--nextone-color-text-soft);
+}
+.sidebar-note p {
+  font-size: var(--nextone-font-size-heading);
+  line-height: 1.7;
+  margin-block-end: var(--nextone-space-sm);
+}
+.sidebar-note small {
+  font-size: var(--nextone-font-size-xs);
+}
+.sidebar-settings {
+  position: relative;
+  flex-shrink: 0;
+}
+
+@media (max-height: 650px) {
+  .sidebar-note {
+    display: none;
+  }
+  .sidebar-settings {
+    margin-block-start: auto;
+    padding-block-start: var(--nextone-space-md);
+  }
+}
+.sidebar-settings .nav-link {
+  width: 100%;
+}
+.mobile-brand {
+  display: none;
+}
+.shell-search {
+  display: flex;
+  align-items: center;
+  gap: var(--nextone-space-3);
+  min-width: 0;
+  width: min(100%, 560px);
+  min-height: var(--nextone-control-target);
+  padding: var(--nextone-space-sm) var(--nextone-space-3);
+  border: 1px solid var(--nextone-color-border);
+  border-radius: var(--nextone-radius-medium);
+  background: var(--nextone-color-background);
+  color: var(--nextone-color-text-muted);
+  text-align: start;
+  font-size: var(--nextone-font-size-sm);
+}
+.shell-search svg {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+.shell-search kbd {
+  margin-inline-start: auto;
+  border: 1px solid var(--nextone-color-border);
+  border-radius: var(--nextone-radius-small);
+  padding: var(--nextone-space-2xs) var(--nextone-space-xs);
+  font-size: var(--nextone-font-size-xs);
+  white-space: nowrap;
+}
+.search-dialog {
+  width: min(620px, calc(100% - var(--nextone-space-xl)));
+  max-height: 80dvh;
+  padding: var(--nextone-space-lg);
+  color: var(--nextone-color-text);
+  background: var(--nextone-color-surface);
+  border: 1px solid var(--nextone-color-border);
+  border-radius: var(--nextone-radius-panel);
+  box-shadow: var(--nextone-shadow-elevated);
+}
+.search-dialog::backdrop {
+  background: var(--nextone-image-overlay);
+}
+.search-dialog > input {
+  width: 100%;
+  margin-block: var(--nextone-space-md);
+}
+.search-results {
+  display: grid;
+}
+.search-results button {
+  display: flex;
+  gap: var(--nextone-space-md);
+  justify-content: space-between;
+  align-items: center;
+  border: 0;
+  border-block-end: 1px solid var(--nextone-color-border);
+  padding: var(--nextone-space-md);
+  background: transparent;
+  text-align: start;
+}
+.search-results button:hover {
+  background: var(--nextone-color-accent-soft);
+}
+.search-results span {
+  overflow-wrap: anywhere;
+}
+.search-results small {
+  max-width: 45%;
+  overflow-wrap: anywhere;
+  color: var(--nextone-color-text-muted);
 }
 
 .skip-link {
@@ -26,15 +167,14 @@
   z-index: 40;
   min-height: var(--nextone-header-height);
   border-block-end: 1px solid var(--nextone-color-border);
-  background: color-mix(in srgb, var(--nextone-color-background) 92%, transparent);
-  backdrop-filter: blur(14px);
+  background: var(--nextone-color-surface);
 }
 
 .app-header-inner {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  width: min(100% - 40px, 1400px);
+  width: calc(100% - var(--nextone-space-2xl));
   min-height: var(--nextone-header-height);
   margin-inline: auto;
   gap: var(--nextone-space-5);
@@ -49,6 +189,9 @@
 }
 
 .app-brand-link {
+  position: relative;
+  z-index: 1;
+  padding-inline: var(--nextone-space-sm);
   min-width: 132px;
   color: var(--nextone-color-text);
   text-decoration: none;
@@ -69,23 +212,27 @@
 
 .brand-logo-wordmark {
   color: var(--nextone-color-text);
-  font-size: 17px;
+  font-size: 21px;
   font-weight: 720;
   letter-spacing: -0.025em;
 }
 
 .primary-nav {
+  position: relative;
+  z-index: 1;
+  flex-direction: column;
+  align-items: stretch;
   justify-content: flex-start;
-  gap: 2px;
+  gap: var(--nextone-space-sm);
 }
 
 .nav-link {
   position: relative;
   display: inline-flex;
-  min-height: 40px;
+  min-height: 44px;
   align-items: center;
-  justify-content: center;
-  gap: 8px;
+  justify-content: flex-start;
+  gap: var(--nextone-space-3);
   border-radius: var(--nextone-radius-md);
   color: var(--nextone-color-text-soft);
   padding-inline: 13px;
@@ -103,15 +250,14 @@
 }
 
 .nav-link-active {
-  background: var(--nextone-color-surface);
-  color: var(--nextone-color-text);
-  box-shadow: inset 0 0 0 1px var(--nextone-color-border);
+  background: var(--nextone-color-focus);
+  color: var(--nextone-color-accent-strong);
 }
 
 .nav-icon {
   display: grid;
-  width: 19px;
-  height: 19px;
+  width: 21px;
+  height: 21px;
   place-items: center;
   flex: 0 0 auto;
 }
